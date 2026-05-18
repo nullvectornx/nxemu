@@ -1,5 +1,8 @@
 #include "module_base.h"
 #include <yuzu_common/logging/backend.h>
+#ifdef ANDROID
+#include <yuzu_common/android/id_cache.h>
+#endif
 
 ModuleBase::ModuleBase() :
     m_lib(nullptr),
@@ -65,6 +68,11 @@ bool ModuleBase::Load(const char * fileName, IModuleNotification * notification,
     interfaces.notification = notification;
     interfaces.settings = settings;
     interfaces.logger = Common::Log::ModuleLogger();
+#ifdef ANDROID
+    interfaces.java_vm = GetJavaVM();
+#else
+    interfaces.java_vm = nullptr;
+#endif
     if (ModuleInitialize(interfaces) != 0)
     {
         return false;

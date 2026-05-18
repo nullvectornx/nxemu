@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <nxemu-core/settings/identifiers.h>
 #include <yuzu_common/logging/backend.h>
+#ifdef ANDROID
+#include <yuzu_common/android/id_cache.h>
+#endif
 
 std::unique_ptr<CpuInterface> g_cpuInterface;
 IModuleNotification * g_notify = nullptr;
@@ -50,6 +53,9 @@ int CALL ModuleInitialize(ModuleInterfaces & interfaces)
     }
     Common::Log::Initialize(interfaces.logger, g_settings->GetString(NXCoreSetting::LogFilter));
     g_settings->RegisterCallback(NXCoreSetting::LogFilter, LoggingSettingChanged, nullptr);
+#ifdef ANDROID
+    SetJavaVM(static_cast<JavaVM*>(interfaces.java_vm));
+#endif
     return 0;
 }
 
