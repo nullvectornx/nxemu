@@ -62,6 +62,7 @@ private:
     void UpdateControllerEnabledButtons();
     void UpdateControllerButtonNames();
     void UpdateButtonState();
+    void UpdateMotionButtons();
     void UpdateMotionCube();
     void UpdateStickDisplay(const SciterElement & svg, NativeAnalogValues analog);
     void DeadzoneSliderChanged(uint32_t analogId);
@@ -84,6 +85,8 @@ private:
     SciterElement m_connectedController;
     SciterElement m_buttonMap[22];
     SciterElement m_motionMap[2];
+    SciterElement m_motionGroup[2];
+    SciterElement m_centerButtonsMotion;
     SciterElement m_analogMapButtons[2][4];
     SciterElement m_analogMapModifierButton[2];
     SciterElement m_analogMapDeadzoneLabel[2];

@@ -216,7 +216,7 @@ namespace
             {
                 return m_package->GetBool(key, default_value);
             }
-            auto pair = data.find(key);
+            DataType::const_iterator pair = data.find(key);
             if (pair == data.end()) 
             {
                 return default_value;
@@ -238,7 +238,7 @@ namespace
             {
                 return m_package->GetInt(key, default_value);
             }
-            auto pair = data.find(key);
+            DataType::const_iterator pair = data.find(key);
             if (pair == data.end())
             {
                 return default_value;
@@ -270,7 +270,7 @@ namespace
             {
                 return m_package->GetString(key, default_value);
             }
-            auto pair = data.find(key);
+            DataType::const_iterator pair = data.find(key);
             if (pair == data.end()) 
             {
                 return default_value;
@@ -304,7 +304,7 @@ namespace
 
             std::string result;
 
-            for (const auto& pair : data) {
+            for (const DataType::value_type & pair : data) {
                 std::array<std::string, 2> key_value{ {pair.first, pair.second} };
                 for (std::string& part : key_value) {
                     part = Common::ReplaceAll(part, { ESCAPE_CHARACTER }, ESCAPE_CHARACTER_ESCAPE);
@@ -543,6 +543,7 @@ InputConfigPlayer::InputConfigPlayer(ISciterUI & sciterUI, InputConfig & config,
     UpdateControllerAvailableButtons();
     UpdateControllerEnabledButtons();
     UpdateControllerButtonNames();
+    UpdateMotionButtons();
 }
 
 void InputConfigPlayer::SaveSetting()
@@ -573,6 +574,16 @@ bool InputConfigPlayer::OnClick(SCITER_ELEMENT element, SCITER_ELEMENT /*source*
                 continue;
             }
             HandleClick(m_buttonMap[i], i, PollingInputType::Button);
+            return false;
+        }
+        for (uint32_t i = 0, n = (uint32_t)NativeMotionValues::NumMotions; i < n; i++)
+        {
+            if (!m_motionMap[i].IsValid() || element != m_motionMap[i])
+            {
+                continue;
+            }
+            HandleClick(m_motionMap[i], i, PollingInputType::Motion);
+            return false;
         }
     }
     return false;
@@ -603,12 +614,30 @@ bool InputConfigPlayer::OnTimer(SCITER_ELEMENT /*element*/, uint32_t * timerId)
 {
     if (timerId == (uint32_t*)TIMER_POLL)
     {
-        ParamPackage param(m_operatingSystem.GetNextInput());
-        if (param.Has("engine") && IsInputAcceptable(param))
+        constexpr int kMaxDrainPerPoll = 64;
+        int drain = 0;
+        for (; drain < kMaxDrainPerPoll; ++drain)
         {
+            ParamPackage param(m_operatingSystem.GetNextInput());
+            if (!param.Has("engine"))
+            {
+                break;
+            }
+            if (!IsInputAcceptable(param))
+            {
+                continue;
+            }
             if (m_pollingType == PollingInputType::Button)
             {
                 m_emulatedController->SetButtonParam(m_pollingButtonId, param);
+            }
+            else if (m_pollingType == PollingInputType::Motion)
+            {
+                m_emulatedController->SetMotionParam(m_pollingButtonId, param);
+            }
+            else
+            {
+                continue;
             }
             PollingDone();
             return false;
@@ -690,6 +719,9 @@ void InputConfigPlayer::BindControls()
 
     m_motionMap[0] = m_page.GetElementByID("buttonMotionLeft");
     m_motionMap[1] = m_page.GetElementByID("buttonMotionRight");
+    m_motionGroup[0] = m_page.GetElementByID("buttonMotionLeftGroup");
+    m_motionGroup[1] = m_page.GetElementByID("buttonMotionRightGroup");
+    m_centerButtonsMotion = m_page.GetElementByID("centerButtonsMotion");
 
     m_analogMapButtons[0][0] = m_page.GetElementByID("ButtonLStickUp");
     m_analogMapButtons[0][1] = m_page.GetElementByID("ButtonLStickDown");
@@ -736,6 +768,15 @@ void InputConfigPlayer::BindControls()
             continue;
         }
         m_sciterUI.AttachHandler(m_buttonMap[i], IID_ICLICKSINK, (IClickSink*)this);
+    }
+
+    for (uint32_t i = 0, n = (uint32_t)NativeMotionValues::NumMotions; i < n; i++)
+    {
+        if (!m_motionMap[i].IsValid())
+        {
+            continue;
+        }
+        m_sciterUI.AttachHandler(m_motionMap[i], IID_ICLICKSINK, (IClickSink*)this);
     }
 
     SciterElement comboControllerType = m_page.GetElementByID("comboControllerType");
@@ -1136,7 +1177,7 @@ std::string InputConfigPlayer::AnalogToText(const IParamPackage& param, const st
 
 int InputConfigPlayer::GetIndexFromControllerType(NpadStyleIndex type) const 
 {
-    const auto it = std::find_if(index_controller_type_pairs.begin(), index_controller_type_pairs.end(), [type](const auto& pair) { return pair.second == type; });
+    const std::vector<std::pair<int, NpadStyleIndex>>::const_iterator it = std::find_if(index_controller_type_pairs.begin(), index_controller_type_pairs.end(), [type](const std::pair<int, NpadStyleIndex>& pair) { return pair.second == type; });
     if (it == index_controller_type_pairs.end())
     {
         return -1;
@@ -1147,7 +1188,7 @@ int InputConfigPlayer::GetIndexFromControllerType(NpadStyleIndex type) const
 
 NpadStyleIndex InputConfigPlayer::GetControllerTypeFromIndex(int index) const
 {
-    const auto it = std::find_if(index_controller_type_pairs.begin(), index_controller_type_pairs.end(), [index](const auto& pair) { return pair.first == index; });
+    const std::vector<std::pair<int, NpadStyleIndex>>::const_iterator it = std::find_if(index_controller_type_pairs.begin(), index_controller_type_pairs.end(), [index](const std::pair<int, NpadStyleIndex>& pair) { return pair.first == index; });
     if (it == index_controller_type_pairs.end())
     {
         return NpadStyleIndex::Fullkey;
@@ -1239,6 +1280,7 @@ void InputConfigPlayer::ControllerTypeChanged()
     UpdateControllerAvailableButtons();
     UpdateControllerEnabledButtons();
     UpdateControllerButtonNames();
+    UpdateMotionButtons();
     const NpadStyleIndex type = GetControllerTypeFromIndex(m_comboControllerType->CurrentIndex());
     if (m_controllerIndex == NpadIdType::Player1) 
     {
@@ -1399,7 +1441,7 @@ void InputConfigPlayer::HandleClick(SciterElement & button, uint32_t buttonId, P
 
 void InputConfigPlayer::RefreshStickUi()
 {
-    const auto now = std::chrono::steady_clock::now();
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     if (m_stickUiThrottleLast != std::chrono::steady_clock::time_point{} &&
         (now - m_stickUiThrottleLast) < std::chrono::milliseconds(50))
     {
@@ -1798,6 +1840,57 @@ void InputConfigPlayer::UpdateButtonState()
     m_sciterUI.UpdateWindow(m_page.GetElementHwnd(true));
 }
 
+void InputConfigPlayer::UpdateMotionButtons()
+{
+    if (m_comboControllerType == nullptr)
+    {
+        return;
+    }
+
+    const NpadStyleIndex layout = GetControllerTypeFromIndex(m_comboControllerType->CurrentIndex());
+
+    bool show_left = false;
+    bool show_right = false;
+    bool show_bar = false;
+
+    switch (layout)
+    {
+    case NpadStyleIndex::Fullkey:
+    case NpadStyleIndex::JoyconLeft:
+    case NpadStyleIndex::Handheld:
+        show_left = true;
+        show_bar = true;
+        break;
+    case NpadStyleIndex::JoyconRight:
+        show_right = true;
+        show_bar = true;
+        break;
+    case NpadStyleIndex::GameCube:
+        break;
+    case NpadStyleIndex::JoyconDual:
+    default:
+        show_left = true;
+        show_right = true;
+        show_bar = true;
+        break;
+    }
+
+    if (m_motionGroup[0].IsValid())
+    {
+        m_motionGroup[0].SetStyleAttribute("display", show_left ? "" : "none");
+    }
+    if (m_motionGroup[1].IsValid())
+    {
+        m_motionGroup[1].SetStyleAttribute("display", show_right ? "" : "none");
+    }
+    if (m_centerButtonsMotion.IsValid())
+    {
+        m_centerButtonsMotion.SetStyleAttribute("display", show_bar ? "" : "none");
+        const char* motion_class = show_bar && show_left != show_right ? "center-buttons-motion single-motion" : "center-buttons-motion";
+        m_centerButtonsMotion.SetAttribute("class", motion_class);
+    }
+}
+
 void InputConfigPlayer::UpdateMotionCube()
 {
     if (m_comboControllerType == nullptr)
@@ -2009,6 +2102,7 @@ void InputConfigPlayer::PollingDone()
     m_pollingType = PollingInputType::None;
     m_pollingButtonId = 0;
     UpdateButtonState();
+    UpdateUI();
 }
 
 void InputConfigPlayer::stControllerEventCallback(ControllerTriggerType type, void * user)
