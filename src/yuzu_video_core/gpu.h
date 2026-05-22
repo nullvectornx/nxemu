@@ -226,6 +226,9 @@ public:
     /// Performs any additional necessary steps to shutdown GPU emulation.
     void NotifyShutdown();
 
+    /// Returns true while the emulated system is powered on.
+    [[nodiscard]] bool IsPoweredOn() const;
+
     /// Obtain the CPU Context
     void ObtainContext();
 

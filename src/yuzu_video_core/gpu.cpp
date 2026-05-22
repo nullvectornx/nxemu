@@ -8,12 +8,12 @@
 #include <list>
 #include <memory>
 
-#include "yuzu_common/yuzu_assert.h"
-#include "yuzu_common/microprofile.h"
-#include "yuzu_common/settings.h"
 #include "frontend/emu_window.h"
 #include "frontend/graphics_context.h"
+#include "yuzu_common/microprofile.h"
 #include "yuzu_common/nvdata.h"
+#include "yuzu_common/settings.h"
+#include "yuzu_common/yuzu_assert.h"
 #include "yuzu_video_core/cdma_pusher.h"
 #include "yuzu_video_core/control/channel_state.h"
 #include "yuzu_video_core/control/scheduler.h"
@@ -31,27 +31,36 @@
 #include "yuzu_video_core/renderer_base.h"
 #include "yuzu_video_core/shader_notify.h"
 
-namespace Tegra {
+namespace Tegra
+{
 
 struct GPU::Impl :
     public ICacheInvalidator
 {
-    explicit Impl(ISystemModules & modules, GPU & gpu_, Tegra::Host1x::Host1x & host1x_, bool is_async_, bool use_nvdec_)
-        : m_modules(modules), gpu{gpu_}, host1x{host1x_}, use_nvdec{use_nvdec_},
-          shader_notify{std::make_unique<VideoCore::ShaderNotify>()}, is_async{is_async_},
-          gpu_thread{gpu_, is_async_}, scheduler{std::make_unique<Control::Scheduler>(gpu)} {}
+    explicit Impl(ISystemModules & modules, GPU & gpu_, Tegra::Host1x::Host1x & host1x_, bool is_async_, bool use_nvdec_) :
+        m_modules(modules),
+        gpu{gpu_},
+        host1x{host1x_}, use_nvdec{use_nvdec_},
+        shader_notify{std::make_unique<VideoCore::ShaderNotify>()},
+        is_async{is_async_},
+        gpu_thread{gpu_, is_async_}, scheduler{std::make_unique<Control::Scheduler>(gpu)}
+    {
+    }
 
     ~Impl() = default;
 
-    std::shared_ptr<Control::ChannelState> CreateChannel(s32 channel_id) {
+    std::shared_ptr<Control::ChannelState> CreateChannel(s32 channel_id)
+    {
         auto channel_state = std::make_shared<Tegra::Control::ChannelState>(channel_id);
         channels.emplace(channel_id, channel_state);
         scheduler->DeclareChannel(channel_state);
         return channel_state;
     }
 
-    void BindChannel(s32 channel_id) {
-        if (bound_channel == channel_id) {
+    void BindChannel(s32 channel_id)
+    {
+        if (bound_channel == channel_id)
+        {
             return;
         }
         auto it = channels.find(channel_id);
@@ -62,26 +71,31 @@ struct GPU::Impl :
         rasterizer->BindChannel(*current_channel);
     }
 
-    std::shared_ptr<Control::ChannelState> AllocateChannel() {
+    std::shared_ptr<Control::ChannelState> AllocateChannel()
+    {
         return CreateChannel(new_channel_id++);
     }
 
-    void InitChannel(Control::ChannelState& to_init, u64 program_id) {
+    void InitChannel(Control::ChannelState & to_init, u64 program_id)
+    {
         to_init.Init(gpu, program_id);
         to_init.BindRasterizer(rasterizer);
         rasterizer->InitializeChannel(to_init);
     }
 
-    void InitAddressSpace(Tegra::MemoryManager& memory_manager) {
+    void InitAddressSpace(Tegra::MemoryManager & memory_manager)
+    {
         memory_manager.BindRasterizer(rasterizer);
     }
 
-    void ReleaseChannel(Control::ChannelState& to_release) {
+    void ReleaseChannel(Control::ChannelState & to_release)
+    {
         UNIMPLEMENTED();
     }
 
     /// Binds a renderer to the GPU.
-    void BindRenderer(std::unique_ptr<VideoCore::RendererBase> renderer_) {
+    void BindRenderer(std::unique_ptr<VideoCore::RendererBase> renderer_)
+    {
         renderer = std::move(renderer_);
         rasterizer = renderer->ReadRasterizer();
         host1x.MemoryManager().BindInterface(rasterizer);
@@ -89,26 +103,29 @@ struct GPU::Impl :
     }
 
     /// Flush all current written commands into the host GPU for execution.
-    void FlushCommands() {
+    void FlushCommands()
+    {
         rasterizer->FlushCommands();
     }
 
     /// Synchronizes CPU writes with Host GPU memory.
-    void InvalidateGPUCache() 
+    void InvalidateGPUCache()
     {
         IOperatingSystem & operatingSystem = m_modules.OperatingSystem();
         operatingSystem.GatherGPUDirtyMemory(this);
     }
 
     /// Signal the ending of command list.
-    void OnCommandListEnd() {
+    void OnCommandListEnd()
+    {
         rasterizer->ReleaseFences(false);
         Settings::UpdateGPUAccuracy();
     }
 
     /// Request a host GPU memory flush from the CPU.
     template <typename Func>
-    [[nodiscard]] u64 RequestSyncOperation(Func&& action) {
+    [[nodiscard]] u64 RequestSyncOperation(Func && action)
+    {
         std::unique_lock lck{sync_request_mutex};
         const u64 fence = ++last_sync_fence;
         sync_requests.emplace_back(action);
@@ -116,19 +133,23 @@ struct GPU::Impl :
     }
 
     /// Obtains current flush request fence id.
-    [[nodiscard]] u64 CurrentSyncRequestFence() const {
+    [[nodiscard]] u64 CurrentSyncRequestFence() const
+    {
         return current_sync_fence.load(std::memory_order_relaxed);
     }
 
-    void WaitForSyncOperation(const u64 fence) {
+    void WaitForSyncOperation(const u64 fence)
+    {
         std::unique_lock lck{sync_request_mutex};
         sync_request_cv.wait(lck, [this, fence] { return CurrentSyncRequestFence() >= fence; });
     }
 
     /// Tick pending requests within the GPU.
-    void TickWork() {
+    void TickWork()
+    {
         std::unique_lock lck{sync_request_mutex};
-        while (!sync_requests.empty()) {
+        while (!sync_requests.empty())
+        {
             auto request = std::move(sync_requests.front());
             sync_requests.pop_front();
             sync_request_mutex.unlock();
@@ -140,122 +161,151 @@ struct GPU::Impl :
     }
 
     /// Returns a reference to the Maxwell3D GPU engine.
-    [[nodiscard]] Engines::Maxwell3D& Maxwell3D() {
+    [[nodiscard]] Engines::Maxwell3D & Maxwell3D()
+    {
         ASSERT(current_channel);
         return *current_channel->maxwell_3d;
     }
 
     /// Returns a const reference to the Maxwell3D GPU engine.
-    [[nodiscard]] const Engines::Maxwell3D& Maxwell3D() const {
+    [[nodiscard]] const Engines::Maxwell3D & Maxwell3D() const
+    {
         ASSERT(current_channel);
         return *current_channel->maxwell_3d;
     }
 
     /// Returns a reference to the KeplerCompute GPU engine.
-    [[nodiscard]] Engines::KeplerCompute& KeplerCompute() {
+    [[nodiscard]] Engines::KeplerCompute & KeplerCompute()
+    {
         ASSERT(current_channel);
         return *current_channel->kepler_compute;
     }
 
     /// Returns a reference to the KeplerCompute GPU engine.
-    [[nodiscard]] const Engines::KeplerCompute& KeplerCompute() const {
+    [[nodiscard]] const Engines::KeplerCompute & KeplerCompute() const
+    {
         ASSERT(current_channel);
         return *current_channel->kepler_compute;
     }
 
     /// Returns a reference to the GPU DMA pusher.
-    [[nodiscard]] Tegra::DmaPusher& DmaPusher() {
+    [[nodiscard]] Tegra::DmaPusher & DmaPusher()
+    {
         ASSERT(current_channel);
         return *current_channel->dma_pusher;
     }
 
     /// Returns a const reference to the GPU DMA pusher.
-    [[nodiscard]] const Tegra::DmaPusher& DmaPusher() const {
+    [[nodiscard]] const Tegra::DmaPusher & DmaPusher() const
+    {
         ASSERT(current_channel);
         return *current_channel->dma_pusher;
     }
 
     /// Returns a reference to the underlying renderer.
-    [[nodiscard]] VideoCore::RendererBase& Renderer() {
+    [[nodiscard]] VideoCore::RendererBase & Renderer()
+    {
         return *renderer;
     }
 
     /// Returns a const reference to the underlying renderer.
-    [[nodiscard]] const VideoCore::RendererBase& Renderer() const {
+    [[nodiscard]] const VideoCore::RendererBase & Renderer() const
+    {
         return *renderer;
     }
 
     /// Returns a reference to the shader notifier.
-    [[nodiscard]] VideoCore::ShaderNotify& ShaderNotify() {
+    [[nodiscard]] VideoCore::ShaderNotify & ShaderNotify()
+    {
         return *shader_notify;
     }
 
     /// Returns a const reference to the shader notifier.
-    [[nodiscard]] const VideoCore::ShaderNotify& ShaderNotify() const {
+    [[nodiscard]] const VideoCore::ShaderNotify & ShaderNotify() const
+    {
         return *shader_notify;
     }
 
-    [[nodiscard]] u64 GetTicks() const {
+    [[nodiscard]] u64 GetTicks() const
+    {
         u64 gpu_tick = m_modules.OperatingSystem().GetGPUTicks();
 
-        if (Settings::values.use_fast_gpu_time.GetValue()) {
+        if (Settings::values.use_fast_gpu_time.GetValue())
+        {
             gpu_tick /= 256;
         }
 
         return gpu_tick;
     }
 
-    [[nodiscard]] bool IsAsync() const {
+    [[nodiscard]] bool IsAsync() const
+    {
         return is_async;
     }
 
-    [[nodiscard]] bool UseNvdec() const {
+    [[nodiscard]] bool UseNvdec() const
+    {
         return use_nvdec;
     }
 
-    void RendererFrameEndNotify() {
+    void RendererFrameEndNotify()
+    {
         m_modules.OperatingSystem().GameFrameEnd();
     }
 
     /// Performs any additional setup necessary in order to begin GPU emulation.
     /// This can be used to launch any necessary threads and register any necessary
     /// core timing events.
-    void Start() {
+    void Start()
+    {
         Settings::UpdateGPUAccuracy();
         gpu_thread.StartThread(*renderer, renderer->Context(), *scheduler);
     }
 
-    void NotifyShutdown() {
+    void NotifyShutdown()
+    {
         std::unique_lock lk{sync_mutex};
         shutting_down.store(true, std::memory_order::relaxed);
         sync_cv.notify_all();
     }
 
+    [[nodiscard]] bool IsPoweredOn() const
+    {
+        return m_modules.OperatingSystem().IsPoweredOn();
+    }
+
     /// Obtain the CPU Context
-    void ObtainContext() {
-        if (!cpu_context) {
+    void ObtainContext()
+    {
+        if (!cpu_context)
+        {
             cpu_context = renderer->GetRenderWindow().CreateSharedContext();
         }
         cpu_context->MakeCurrent();
     }
 
     /// Release the CPU Context
-    void ReleaseContext() {
+    void ReleaseContext()
+    {
         cpu_context->DoneCurrent();
     }
 
     /// Push GPU command entries to be processed
-    void PushGPUEntries(s32 channel, Tegra::CommandList&& entries) {
+    void PushGPUEntries(s32 channel, Tegra::CommandList && entries)
+    {
         gpu_thread.SubmitList(channel, std::move(entries));
     }
 
     /// Push GPU command buffer entries to be processed
-    void PushCommandBuffer(u32 id, Tegra::ChCommandHeaderList& entries) {
-        if (!use_nvdec) {
+    void PushCommandBuffer(u32 id, Tegra::ChCommandHeaderList & entries)
+    {
+        if (!use_nvdec)
+        {
             return;
         }
 
-        if (!cdma_pushers.contains(id)) {
+        if (!cdma_pushers.contains(id))
+        {
             cdma_pushers.insert_or_assign(id, std::make_unique<Tegra::CDmaPusher>(host1x));
         }
 
@@ -266,27 +316,31 @@ struct GPU::Impl :
     }
 
     /// Frees the CDMAPusher instance to free up resources
-    void ClearCdmaInstance(u32 id) {
+    void ClearCdmaInstance(u32 id)
+    {
         const auto iter = cdma_pushers.find(id);
-        if (iter != cdma_pushers.end()) {
+        if (iter != cdma_pushers.end())
+        {
             cdma_pushers.erase(iter);
         }
     }
 
     /// Notify rasterizer that any caches of the specified region should be flushed to Switch memory
-    void FlushRegion(DAddr addr, u64 size) {
+    void FlushRegion(DAddr addr, u64 size)
+    {
         gpu_thread.FlushRegion(addr, size);
     }
 
-    RasterizerDownloadArea OnCPURead(DAddr addr, u64 size) {
+    RasterizerDownloadArea OnCPURead(DAddr addr, u64 size)
+    {
         auto raster_area = rasterizer->GetFlushArea(addr, size);
-        if (raster_area.preemtive) {
+        if (raster_area.preemtive)
+        {
             return raster_area;
         }
         raster_area.preemtive = true;
         const u64 fence = RequestSyncOperation([this, &raster_area]() {
-            rasterizer->FlushRegion(raster_area.startAddress,
-                                    raster_area.endAddress - raster_area.startAddress);
+            rasterizer->FlushRegion(raster_area.startAddress, raster_area.endAddress - raster_area.startAddress);
         });
         gpu_thread.TickGPU();
         WaitForSyncOperation(fence);
@@ -294,29 +348,35 @@ struct GPU::Impl :
     }
 
     /// Notify rasterizer that any caches of the specified region should be invalidated
-    void InvalidateRegion(DAddr addr, u64 size) {
+    void InvalidateRegion(DAddr addr, u64 size)
+    {
         gpu_thread.InvalidateRegion(addr, size);
     }
 
-    bool OnCPUWrite(DAddr addr, u64 size) {
+    bool OnCPUWrite(DAddr addr, u64 size)
+    {
         return rasterizer->OnCPUWrite(addr, size);
     }
 
     /// Notify rasterizer that any caches of the specified region should be flushed and invalidated
-    void FlushAndInvalidateRegion(DAddr addr, u64 size) {
+    void FlushAndInvalidateRegion(DAddr addr, u64 size)
+    {
         gpu_thread.FlushAndInvalidateRegion(addr, size);
     }
 
-    void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
-                          std::vector<Service::Nvidia::NvFence>&& fences) {
+    void RequestComposite(std::vector<Tegra::FramebufferConfig> && layers, std::vector<Service::Nvidia::NvFence> && fences)
+    {
         size_t num_fences{fences.size()};
         size_t current_request_counter{};
         {
             std::unique_lock<std::mutex> lk(request_swap_mutex);
-            if (free_swap_counters.empty()) {
+            if (free_swap_counters.empty())
+            {
                 current_request_counter = request_swap_counters.size();
                 request_swap_counters.emplace_back(num_fences);
-            } else {
+            }
+            else
+            {
                 current_request_counter = free_swap_counters.front();
                 request_swap_counters[current_request_counter] = num_fences;
                 free_swap_counters.pop_front();
@@ -324,21 +384,24 @@ struct GPU::Impl :
         }
         const auto wait_fence =
             RequestSyncOperation([this, current_request_counter, &layers, &fences, num_fences] {
-                auto& syncpoint_manager = host1x.GetSyncpointManager();
-                if (num_fences == 0) {
+                auto & syncpoint_manager = host1x.GetSyncpointManager();
+                if (num_fences == 0)
+                {
                     renderer->Composite(layers);
                 }
                 const auto executer = [this, current_request_counter, layers_copy = layers]() {
                     {
                         std::unique_lock<std::mutex> lk(request_swap_mutex);
-                        if (--request_swap_counters[current_request_counter] != 0) {
+                        if (--request_swap_counters[current_request_counter] != 0)
+                        {
                             return;
                         }
                         free_swap_counters.push_back(current_request_counter);
                     }
                     renderer->Composite(layers_copy);
                 };
-                for (size_t i = 0; i < num_fences; i++) {
+                for (size_t i = 0; i < num_fences; i++)
+                {
                     syncpoint_manager.RegisterGuestAction(fences[i].id, fences[i].value, executer);
                 }
             });
@@ -346,11 +409,11 @@ struct GPU::Impl :
         WaitForSyncOperation(wait_fence);
     }
 
-    std::vector<u8> GetAppletCaptureBuffer() {
+    std::vector<u8> GetAppletCaptureBuffer()
+    {
         std::vector<u8> out;
 
-        const auto wait_fence =
-            RequestSyncOperation([&] { out = renderer->GetAppletCaptureBuffer(); });
+        const auto wait_fence = RequestSyncOperation([&] { out = renderer->GetAppletCaptureBuffer(); });
         gpu_thread.TickGPU();
         WaitForSyncOperation(wait_fence);
 
@@ -373,7 +436,7 @@ struct GPU::Impl :
 
     std::map<u32, std::unique_ptr<Tegra::CDmaPusher>> cdma_pushers;
     std::unique_ptr<VideoCore::RendererBase> renderer;
-    VideoCore::RasterizerInterface* rasterizer = nullptr;
+    VideoCore::RasterizerInterface * rasterizer = nullptr;
     const bool use_nvdec;
 
     s32 new_channel_id{1};
@@ -404,7 +467,7 @@ struct GPU::Impl :
 
     std::unique_ptr<Tegra::Control::Scheduler> scheduler;
     std::unordered_map<s32, std::shared_ptr<Tegra::Control::ChannelState>> channels;
-    Tegra::Control::ChannelState* current_channel;
+    Tegra::Control::ChannelState * current_channel;
     s32 bound_channel{-1};
 
     std::deque<size_t> free_swap_counters;
@@ -412,188 +475,237 @@ struct GPU::Impl :
     std::mutex request_swap_mutex;
 };
 
-GPU::GPU(ISystemModules & modules, Tegra::Host1x::Host1x & host1x, bool is_async, bool use_nvdec)
-    : impl{std::make_unique<Impl>(modules, *this, host1x, is_async, use_nvdec)} {}
+GPU::GPU(ISystemModules & modules, Tegra::Host1x::Host1x & host1x, bool is_async, bool use_nvdec) :
+    impl{std::make_unique<Impl>(modules, *this, host1x, is_async, use_nvdec)}
+{
+}
 
 GPU::~GPU() = default;
 
-std::shared_ptr<Control::ChannelState> GPU::AllocateChannel() {
+std::shared_ptr<Control::ChannelState> GPU::AllocateChannel()
+{
     return impl->AllocateChannel();
 }
 
-void GPU::InitChannel(Control::ChannelState& to_init, u64 program_id) {
+void GPU::InitChannel(Control::ChannelState & to_init, u64 program_id)
+{
     impl->InitChannel(to_init, program_id);
 }
 
-void GPU::BindChannel(s32 channel_id) {
+void GPU::BindChannel(s32 channel_id)
+{
     impl->BindChannel(channel_id);
 }
 
-void GPU::ReleaseChannel(Control::ChannelState& to_release) {
+void GPU::ReleaseChannel(Control::ChannelState & to_release)
+{
     impl->ReleaseChannel(to_release);
 }
 
-void GPU::InitAddressSpace(Tegra::MemoryManager& memory_manager) {
+void GPU::InitAddressSpace(Tegra::MemoryManager & memory_manager)
+{
     impl->InitAddressSpace(memory_manager);
 }
 
-void GPU::BindRenderer(std::unique_ptr<VideoCore::RendererBase> renderer) {
+void GPU::BindRenderer(std::unique_ptr<VideoCore::RendererBase> renderer)
+{
     impl->BindRenderer(std::move(renderer));
 }
 
-void GPU::FlushCommands() {
+void GPU::FlushCommands()
+{
     impl->FlushCommands();
 }
 
-void GPU::InvalidateGPUCache() {
+void GPU::InvalidateGPUCache()
+{
     impl->InvalidateGPUCache();
 }
 
-void GPU::OnCommandListEnd() {
+void GPU::OnCommandListEnd()
+{
     impl->OnCommandListEnd();
 }
 
-u64 GPU::RequestFlush(DAddr addr, std::size_t size) {
-    return impl->RequestSyncOperation(
-        [this, addr, size]() { impl->rasterizer->FlushRegion(addr, size); });
+u64 GPU::RequestFlush(DAddr addr, std::size_t size)
+{
+    return impl->RequestSyncOperation([this, addr, size]() { impl->rasterizer->FlushRegion(addr, size); });
 }
 
-u64 GPU::CurrentSyncRequestFence() const {
+u64 GPU::CurrentSyncRequestFence() const
+{
     return impl->CurrentSyncRequestFence();
 }
 
-void GPU::WaitForSyncOperation(u64 fence) {
+void GPU::WaitForSyncOperation(u64 fence)
+{
     return impl->WaitForSyncOperation(fence);
 }
 
-void GPU::TickWork() {
+void GPU::TickWork()
+{
     impl->TickWork();
 }
 
 /// Gets a mutable reference to the Host1x interface
-Host1x::Host1x& GPU::Host1x() {
+Host1x::Host1x & GPU::Host1x()
+{
     return impl->host1x;
 }
 
 /// Gets an immutable reference to the Host1x interface.
-const Host1x::Host1x& GPU::Host1x() const {
+const Host1x::Host1x & GPU::Host1x() const
+{
     return impl->host1x;
 }
 
-Engines::Maxwell3D& GPU::Maxwell3D() {
+Engines::Maxwell3D & GPU::Maxwell3D()
+{
     return impl->Maxwell3D();
 }
 
-const Engines::Maxwell3D& GPU::Maxwell3D() const {
+const Engines::Maxwell3D & GPU::Maxwell3D() const
+{
     return impl->Maxwell3D();
 }
 
-Engines::KeplerCompute& GPU::KeplerCompute() {
+Engines::KeplerCompute & GPU::KeplerCompute()
+{
     return impl->KeplerCompute();
 }
 
-const Engines::KeplerCompute& GPU::KeplerCompute() const {
+const Engines::KeplerCompute & GPU::KeplerCompute() const
+{
     return impl->KeplerCompute();
 }
 
-Tegra::DmaPusher& GPU::DmaPusher() {
+Tegra::DmaPusher & GPU::DmaPusher()
+{
     return impl->DmaPusher();
 }
 
-const Tegra::DmaPusher& GPU::DmaPusher() const {
+const Tegra::DmaPusher & GPU::DmaPusher() const
+{
     return impl->DmaPusher();
 }
 
-VideoCore::RendererBase& GPU::Renderer() {
+VideoCore::RendererBase & GPU::Renderer()
+{
     return impl->Renderer();
 }
 
-const VideoCore::RendererBase& GPU::Renderer() const {
+const VideoCore::RendererBase & GPU::Renderer() const
+{
     return impl->Renderer();
 }
 
-VideoCore::ShaderNotify& GPU::ShaderNotify() {
+VideoCore::ShaderNotify & GPU::ShaderNotify()
+{
     return impl->ShaderNotify();
 }
 
-const VideoCore::ShaderNotify& GPU::ShaderNotify() const {
+const VideoCore::ShaderNotify & GPU::ShaderNotify() const
+{
     return impl->ShaderNotify();
 }
 
-void GPU::RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
-                           std::vector<Service::Nvidia::NvFence>&& fences) {
+void GPU::RequestComposite(std::vector<Tegra::FramebufferConfig> && layers, std::vector<Service::Nvidia::NvFence> && fences)
+{
     impl->RequestComposite(std::move(layers), std::move(fences));
 }
 
-std::vector<u8> GPU::GetAppletCaptureBuffer() {
+std::vector<u8> GPU::GetAppletCaptureBuffer()
+{
     return impl->GetAppletCaptureBuffer();
 }
 
-u64 GPU::GetTicks() const {
+u64 GPU::GetTicks() const
+{
     return impl->GetTicks();
 }
 
-bool GPU::IsAsync() const {
+bool GPU::IsAsync() const
+{
     return impl->IsAsync();
 }
 
-bool GPU::UseNvdec() const {
+bool GPU::UseNvdec() const
+{
     return impl->UseNvdec();
 }
 
-void GPU::RendererFrameEndNotify() {
+void GPU::RendererFrameEndNotify()
+{
     impl->RendererFrameEndNotify();
 }
 
-void GPU::Start() {
+void GPU::Start()
+{
     impl->Start();
 }
 
-void GPU::NotifyShutdown() {
+void GPU::NotifyShutdown()
+{
     impl->NotifyShutdown();
 }
 
-void GPU::ObtainContext() {
+bool GPU::IsPoweredOn() const
+{
+    return impl->IsPoweredOn();
+}
+
+void GPU::ObtainContext()
+{
     impl->ObtainContext();
 }
 
-void GPU::ReleaseContext() {
+void GPU::ReleaseContext()
+{
     impl->ReleaseContext();
 }
 
-void GPU::PushGPUEntries(s32 channel, Tegra::CommandList&& entries) {
+void GPU::PushGPUEntries(s32 channel, Tegra::CommandList && entries)
+{
     impl->PushGPUEntries(channel, std::move(entries));
 }
 
-void GPU::PushCommandBuffer(u32 id, Tegra::ChCommandHeaderList& entries) {
+void GPU::PushCommandBuffer(u32 id, Tegra::ChCommandHeaderList & entries)
+{
     impl->PushCommandBuffer(id, entries);
 }
 
-void GPU::ClearCdmaInstance(u32 id) {
+void GPU::ClearCdmaInstance(u32 id)
+{
     impl->ClearCdmaInstance(id);
 }
 
-RasterizerDownloadArea GPU::OnCPURead(PAddr addr, u64 size) {
+RasterizerDownloadArea GPU::OnCPURead(PAddr addr, u64 size)
+{
     return impl->OnCPURead(addr, size);
 }
 
-void GPU::FlushRegion(DAddr addr, u64 size) {
+void GPU::FlushRegion(DAddr addr, u64 size)
+{
     impl->FlushRegion(addr, size);
 }
 
-void GPU::InvalidateRegion(DAddr addr, u64 size) {
+void GPU::InvalidateRegion(DAddr addr, u64 size)
+{
     impl->InvalidateRegion(addr, size);
 }
 
-bool GPU::OnCPUWrite(DAddr addr, u64 size) {
+bool GPU::OnCPUWrite(DAddr addr, u64 size)
+{
     return impl->OnCPUWrite(addr, size);
 }
 
-void GPU::FlushAndInvalidateRegion(DAddr addr, u64 size) {
+void GPU::FlushAndInvalidateRegion(DAddr addr, u64 size)
+{
     impl->FlushAndInvalidateRegion(addr, size);
 }
 
-void GPU::RegisterHostThread() {
+void GPU::RegisterHostThread()
+{
     impl->RegisterHostThread();
 }
 

@@ -152,6 +152,11 @@ bool OSManager::IsShuttingDown() const
     return m_coreSystem.IsShuttingDown();
 }
 
+bool OSManager::IsPoweredOn() const
+{
+    return m_coreSystem.IsPoweredOn();
+}
+
 void OSManager::ShutdownMainProcess()
 {
     m_coreSystem.ShutdownMainProcess();
