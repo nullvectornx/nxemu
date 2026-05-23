@@ -14,6 +14,7 @@
 #include "core/file_sys/vfs/vfs_vector.h"
 #include "core/loader/loader.h"
 #include "firmware_zip.h"
+#include "loader_settings.h"
 #include "rom_info.h"
 #include <algorithm>
 #include <cctype>
@@ -361,6 +362,7 @@ Systemloader::~Systemloader()
 
 bool Systemloader::Initialize()
 {
+    SetupLoaderSetting();
     if (impl->m_virtualFilesystem == nullptr)
     {
         impl->m_virtualFilesystem = std::make_shared<FileSys::RealVfsFilesystem>();

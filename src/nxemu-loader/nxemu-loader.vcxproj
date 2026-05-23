@@ -130,6 +130,8 @@
     <ClInclude Include="core\loader\nso.h" />
     <ClInclude Include="core\loader\nsp.h" />
     <ClInclude Include="core\loader\xci.h" />
+    <ClInclude Include="loader_settings.h" />
+    <ClInclude Include="loader_settings_identifiers.h" />
     <ClInclude Include="rom_info.h" />
     <ClInclude Include="system_loader.h" />
   </ItemGroup>
@@ -202,6 +204,7 @@
     <ClCompile Include="core\loader\nsp.cpp" />
     <ClCompile Include="core\loader\xci.cpp" />
     <ClCompile Include="firmware_zip.cpp" />
+    <ClCompile Include="loader_settings.cpp" />
     <ClCompile Include="nxemu-loader.cpp" />
     <ClCompile Include="rom_info.cpp" />
     <ClCompile Include="system_loader.cpp" />

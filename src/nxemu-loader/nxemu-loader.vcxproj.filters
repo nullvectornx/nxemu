@@ -297,6 +297,12 @@
     <ClCompile Include="core\file_sys\vfs\vfs_ivirtualfile.cpp">
       <Filter>Source Files\core\file_sys\vfs</Filter>
     </ClCompile>
+    <ClCompile Include="firmware_zip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="loader_settings.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="system_loader.h">
@@ -562,6 +568,12 @@
     </ClInclude>
     <ClInclude Include="core\file_sys\vfs\vfs_ivirtualfile.h">
       <Filter>Header Files\core\file_sys\vfs</Filter>
+    </ClInclude>
+    <ClInclude Include="loader_settings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="loader_settings_identifiers.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

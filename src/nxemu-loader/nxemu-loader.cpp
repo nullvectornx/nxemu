@@ -1,3 +1,4 @@
+#include "loader_settings.h"
 #include "system_loader.h"
 #include <memory>
 #include <stdio.h>
@@ -53,6 +54,7 @@ int CALL ModuleInitialize(ModuleInterfaces & interfaces)
     }
     Common::Log::Initialize(interfaces.logger, g_settings->GetString(NXCoreSetting::LogFilter));
     g_settings->RegisterCallback(NXCoreSetting::LogFilter, LoggingSettingChanged, nullptr);
+    SetupLoaderSetting();
 #ifdef ANDROID
     SetJavaVM(static_cast<JavaVM*>(interfaces.java_vm));
 #endif
@@ -97,6 +99,7 @@ Output: None
 */
 EXPORT void CALL FlushSettings()
 {
+    SaveLoaderSettings();
 }
 
 ISystemloader * CALL CreateSystemLoader(ISystemModules & modules)
