@@ -59,6 +59,7 @@ private:
     void ControllerEventCallback(ControllerTriggerType type);
     void RefreshStickUi();
     void UpdateControllerAvailableButtons();
+    void UpdateControllerGraphic(NpadStyleIndex layout);
     void UpdateControllerEnabledButtons();
     void UpdateControllerButtonNames();
     void UpdateButtonState();
@@ -108,4 +109,5 @@ private:
     std::vector<std::pair<int, NpadStyleIndex>> index_controller_type_pairs;
     std::chrono::steady_clock::time_point m_stickUiThrottleLast;
     std::chrono::steady_clock::time_point m_motionUiThrottleLast;
+    NpadStyleIndex m_displayedControllerLayout;
 };
