@@ -1,4 +1,5 @@
 #include "sciter_main_window.h"
+#include "user_interface/notification.h"
 #include "settings/input_config.h"
 #include "settings/system_config.h"
 #include "settings/ui_settings.h"
@@ -298,6 +299,7 @@ const std::string * SciterMainWindow::MenuIconSvg(GuiAction action)
 
 SciterMainWindow::~SciterMainWindow()
 {
+    Notification::GetInstance().ClearSciterContext();
     m_WebBrowser.DetachWindow();
 
     SettingsStore & settings = SettingsStore::GetInstance();
@@ -491,6 +493,7 @@ bool SciterMainWindow::Show()
     {
         PopulateVulkanRecords(m_vkDeviceRecords, RenderSurface());
     }
+    Notification::GetInstance().SetSciterContext(&m_sciterUI, (void *)m_window->GetHandle());
     m_window->Show();
     return true;
 }
