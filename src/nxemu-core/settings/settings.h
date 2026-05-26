@@ -24,7 +24,7 @@ class SettingsStore
 public:
     SettingsStore();
 
-    bool Initialize(const char * configPath);
+    bool Initialize(const char * configPath, const char * baseDirectory);
     const char * GetConfigFile(void) const;
 
     JsonValue GetSettings(const char * section) const;

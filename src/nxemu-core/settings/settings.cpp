@@ -9,8 +9,15 @@ SettingsStore::SettingsStore()
 {
 }
 
-bool SettingsStore::Initialize(const char * configPath)
+bool SettingsStore::Initialize(const char * configPath, const char * baseDirectory)
 {
+    if (baseDirectory == nullptr || baseDirectory[0] == '\0')
+    {
+        return false;
+    }
+
+    const Path normalization_base(baseDirectory);
+
     m_configPath = configPath;
 
     m_details = JsonValue();
@@ -48,7 +55,7 @@ bool SettingsStore::Initialize(const char * configPath)
         else
         {
             Path newConfigfile(value != nullptr ? value->asString() : "");
-            newConfigfile.DirectoryNormalize(Path(Path::MODULE_DIRECTORY));
+            newConfigfile.DirectoryNormalize(normalization_base);
             m_configPath = (const char *)newConfigfile;
         }
     }

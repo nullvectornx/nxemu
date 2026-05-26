@@ -2,10 +2,12 @@
 #include "startup_checks.h"
 #include "user_interface/notification.h"
 #include "user_interface/sciter_main_window.h"
+#include <common/path.h>
 #include <common/std_string.h>
 #include <memory>
 #include <nxemu-core/app_init.h>
 #include <nxemu-core/version.h>
+#include <yuzu_common/fs/path_util.h>
 #include <sciter_ui.h>
 #include <widgets/list_box.h>
 #include <widgets/combo_box.h>
@@ -32,12 +34,7 @@ extern "C" {
 
 int WINAPI WinMain(_In_ HINSTANCE /*hInstance*/, _In_opt_ HINSTANCE /*hPrevInstance*/, _In_ LPSTR /*lpszArgs*/, _In_ int /*nWinMode*/)
 {
-    bool Res;
-    {
-        Path congFilePath(Path::MODULE_DIRECTORY, "NxEmu.config");
-        congFilePath.AppendDirectory("config");
-        Res = AppInit(&Notification::GetInstance(), congFilePath);    
-    }
+    bool res = AppInit(&Notification::GetInstance(), Path(Path::MODULE_DIRECTORY), Common::FS::PathToUTF8String(Common::FS::GetDefaultAppStorageDirectory()).c_str());
 
     if (uiSettings.performVulkanCheck)
     {
@@ -49,11 +46,11 @@ int WINAPI WinMain(_In_ HINSTANCE /*hInstance*/, _In_opt_ HINSTANCE /*hPrevInsta
     }
 
     ISciterUI * sciterUI = nullptr;
-    if (Res && !SciterUIInit(uiSettings.languageDir, uiSettings.languageBase.c_str(), uiSettings.languageCurrent.c_str(), uiSettings.sciterConsole, sciterUI))
+    if (res && !SciterUIInit(uiSettings.languageDir, uiSettings.languageBase.c_str(), uiSettings.languageCurrent.c_str(), uiSettings.sciterConsole, sciterUI))
     {
-        Res = false;
+        res = false;
     }
-    if (Res)
+    if (res)
     {
         RegisterWidgets(*sciterUI);
         SciterMainWindow window(*sciterUI, stdstr_f("NXEmu %s", VER_FILE_VERSION_STR).c_str());
@@ -66,5 +63,5 @@ int WINAPI WinMain(_In_ HINSTANCE /*hInstance*/, _In_opt_ HINSTANCE /*hPrevInsta
     }
     AppCleanup();
     Notification::CleanUp();
-    return Res ? 0 : 1;
+    return res ? 0 : 1;
 }

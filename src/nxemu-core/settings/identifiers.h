@@ -14,6 +14,9 @@ enum class EmulationState : int32_t
 
 namespace NXCoreSetting
 {
+constexpr const char * AppBaseDirectory = "nxcore:AppBaseDirectory";
+constexpr const char * AppDirectory = "nxcore:AppDirectory";
+constexpr const char * ConfigFile = "nxcore:ConfigFile";
 constexpr const char * GameFile = "nxcore:GameFile";
 constexpr const char * GameName = "nxcore:GameName";
 constexpr const char * ModuleDirectory = "nxcore:ModuleDirectory";

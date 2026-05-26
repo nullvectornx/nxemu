@@ -6,6 +6,8 @@ struct CoreSettings
 {
     bool ShowLogConsole;
     std::string LogFilter;
+    Path baseDir;
+    Path appDir;
     Path configDir;
     Path moduleDir;
     std::string moduleDirValue;

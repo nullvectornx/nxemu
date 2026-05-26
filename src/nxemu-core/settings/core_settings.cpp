@@ -20,6 +20,7 @@ namespace
     public:
         CoreSetting(const char * id, bool defaultValue);
         CoreSetting(const char * id, int defaultValue);
+        CoreSetting(const char * id, Path * settingPath);
         CoreSetting(const char * id, const char * section, const char * key, bool * settingValue, bool defaultValue);
         CoreSetting(const char * id, const char * section, const char * key, Path * settingPath, std::string * settingPathValue, const char * defaultValue);
         CoreSetting(const char * id, const char * section, const char * key, std::string * settingStr, const char * defaultValue);
@@ -48,6 +49,8 @@ namespace
     };
 
     static CoreSetting settings[] = {
+        { NXCoreSetting::AppBaseDirectory, &coreSettings.baseDir },
+        { NXCoreSetting::AppDirectory, &coreSettings.appDir },
         { NXCoreSetting::ModuleDirectory, "", "ModuleDirectory-x64", &coreSettings.moduleDir, &coreSettings.moduleDirValue, "./modules" },
 #ifdef _WIN32
 #ifdef _DEBUG
@@ -273,6 +276,17 @@ CoreSetting::CoreSetting(const char * id, int defaultValue) :
 {
     defaults.intValue = defaultValue;
     value.intValue = nullptr;
+    clearValue.strValue = nullptr;
+}
+
+CoreSetting::CoreSetting(const char * id, Path * settingPath) :
+    identifier(id),
+    json_section(nullptr),
+    json_key(nullptr),
+    settingType(SettingType::Path)
+{
+    defaults.strValue = "";
+    value.path = settingPath;
     clearValue.strValue = nullptr;
 }
 

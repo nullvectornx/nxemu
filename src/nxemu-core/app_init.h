@@ -3,5 +3,5 @@
 
 nxinterface INotification;
 
-bool AppInit(INotification * notification, const char * configPath);
+bool AppInit(INotification * notification, const char * baseDirectory, const char * appDirectory);
 void AppCleanup();

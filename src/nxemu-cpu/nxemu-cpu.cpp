@@ -2,6 +2,7 @@
 #include <memory>
 #include <stdio.h>
 #include <nxemu-core/settings/identifiers.h>
+#include <yuzu_common/fs/path_util.h>
 #include <yuzu_common/logging/backend.h>
 #ifdef ANDROID
 #include <yuzu_common/android/id_cache.h>
@@ -51,6 +52,7 @@ int CALL ModuleInitialize(ModuleInterfaces & interfaces)
     {
         return -1;
     }
+    Common::FS::SetAppDirectory(std::string(g_settings->GetString(NXCoreSetting::AppDirectory)));
     Common::Log::Initialize(interfaces.logger, g_settings->GetString(NXCoreSetting::LogFilter));
     g_settings->RegisterCallback(NXCoreSetting::LogFilter, LoggingSettingChanged, nullptr);
 #ifdef ANDROID
