@@ -489,6 +489,9 @@ Systemloader::Systemloader(ISystemModules & modules) :
 
 Systemloader::~Systemloader()
 {
+    impl->m_appLoader.reset();
+    impl->m_file.reset();
+    impl.reset();
 }
 
 bool Systemloader::Initialize()
