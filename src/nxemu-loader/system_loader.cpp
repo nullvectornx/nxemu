@@ -17,6 +17,7 @@
 #include "core/loader/loader.h"
 #include "firmware_zip.h"
 #include "loader_settings.h"
+#include "loader_settings_identifiers.h"
 #include "rom_info.h"
 #include <algorithm>
 #include <cctype>
@@ -257,6 +258,12 @@ std::filesystem::path CreateFirmwareExtractDirectory()
     return {};
 }
 
+void ClearFirmwareInstallProgress()
+{
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, 0);
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallTotal, 0);
+}
+
 void CollectFirmwareSourcesFromPath(const std::filesystem::path & path, const FileSys::VirtualFilesystem & vfs, std::vector<FirmwareInstallSource> & sources)
 {
     std::error_code ec;
@@ -376,10 +383,15 @@ bool InstallFirmwareFilesToRegistered(::FileSystemController & fs_controller, co
         return false;
     }
 
+    int32_t copied = 0;
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallTotal, static_cast<int32_t>(sources.size()));
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, 0);
+
     for (const FirmwareInstallSource & source : sources)
     {
         if (!source.file)
         {
+            ClearFirmwareInstallProgress();
             g_notify->DisplayError("Copying one or more firmware files failed. See the log for details.", "Firmware install failed");
             return false;
         }
@@ -389,11 +401,14 @@ bool InstallFirmwareFilesToRegistered(::FileSystemController & fs_controller, co
         if (!dst_file || !FileSys::VfsRawCopy(source.file, dst_file))
         {
             LOG_ERROR(Core, "Firmware install: copy failed for {}", filename);
+            ClearFirmwareInstallProgress();
             g_notify->DisplayError("Copying one or more firmware files failed. See the log for details.", "Firmware install failed");
             return false;
         }
+        g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, ++copied);
     }
 
+    ClearFirmwareInstallProgress();
     return true;
 }
 
@@ -1192,6 +1207,8 @@ bool Systemloader::InstallFirmwarePackage(const char * utf8_path)
         return false;
     }
 
+    ClearFirmwareInstallProgress();
+
     FirmwareVersionFormat package_firmware{};
     if (!impl->QueryFirmwarePackage(utf8_path, &package_firmware))
     {
@@ -1232,5 +1249,7 @@ bool Systemloader::InstallFirmwarePackage(const char * utf8_path)
     {
         g_notify->DisplayError("Firmware installed successfully.", "Firmware installed");
     }
+
+    ClearFirmwareInstallProgress();
     return installed;
 }

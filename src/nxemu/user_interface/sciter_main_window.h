@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <nxemu-core/modules/system_modules.h>
 #include <nxemu-module-spec/base.h>
 #include <nxemu-module-spec/system_loader.h>
@@ -66,6 +67,7 @@ class SciterMainWindow :
         TIMER_UPDATE_UI = 5000,
         TIMER_UPDATE_INPUT,
         TIMER_UPDATE_STATUS,
+        TIMER_UPDATE_INSTALL_FIRMWARE,
     };
 
 public:
@@ -94,6 +96,7 @@ private:
     static void GameNameChanged(const char * setting, void * userData);
     static void DisplayedFramesChanged(const char * setting, void * userData);
     static void DiskCacheLoadChanged(const char * setting, void * userData);
+    static void FirmwareInstallTotalChanged(const char * setting, void * userData);
     static void HotKeysChanged(const char * setting, void * userData);
     void UpdateStatusWidgets();
     void UpdateInputDrivers();
@@ -108,6 +111,11 @@ private:
     void OnInputConfig();
     void OnInstallFirmwareFromFile();
     void OnInstallFirmwareFromFolder();
+    void BeginFirmwareInstall(const char * utf8_path);
+    void StartFirmwareInstallUi();
+    void StopFirmwareInstallUi();
+    void RefreshFirmwareInstallLoading();
+    void FinishFirmwareInstall();
     void OnRecetGame(uint32_t fileIndex);
     void OnToggleDockedMode();
     void OnToggleStartGamesInFullscreen();
@@ -187,4 +195,7 @@ private:
     int m_lastPostedDiskCacheStage;
     bool m_shownFirstFrame;
     std::unique_ptr<Win32FullscreenState> m_win32Fullscreen;
+    bool m_firmwareInstallInProgress;
+    bool m_firmwareInstallUiActive;
+    std::thread m_firmwareInstallThread;
 };
