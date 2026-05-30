@@ -2,6 +2,7 @@
 #include "settings/input_config.h"
 #include "settings/system_config.h"
 #include "settings/ui_settings.h"
+#include "user_interface/dpi_scaling.h"
 #include "user_interface/key_mappings.h"
 #include <common/base64.h>
 #include <common/std_string.h>
@@ -428,7 +429,10 @@ bool SciterMainWindow::Show()
         WINDOW_WIDTH = 760,
     };
 
-    if (!m_sciterUI.WindowCreate(nullptr, "main_window.html", 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, SUIW_MAIN | SUIW_HIDDEN, m_window))
+    int width = WINDOW_WIDTH;
+    int height = WINDOW_HEIGHT;
+    ScaleWindowSizeForDpi(nullptr, width, height);
+    if (!m_sciterUI.WindowCreate(nullptr, "main_window.html", 0, 0, width, height, SUIW_MAIN | SUIW_HIDDEN, m_window))
     {
         return false;
     }
@@ -1163,7 +1167,40 @@ void * SciterMainWindow::RenderSurface() const
 
 float SciterMainWindow::PixelRatio() const
 {
-    return 1.0;
+    HWND hwnd = nullptr;
+    if (m_renderWindow != nullptr)
+    {
+        hwnd = (HWND)m_renderWindow;
+    }
+    else if (m_window != nullptr)
+    {
+        hwnd = (HWND)m_window->GetHandle();
+    }
+
+    typedef UINT (WINAPI * PFN_GetDpiForWindow)(HWND);
+    static PFN_GetDpiForWindow pGetDpiForWindow = reinterpret_cast<PFN_GetDpiForWindow>(
+        ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+
+    if (hwnd != nullptr && pGetDpiForWindow != nullptr)
+    {
+        UINT dpi = pGetDpiForWindow(hwnd);
+        if (dpi != 0)
+        {
+            return static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        }
+    }
+
+    HDC hdc = ::GetDC(hwnd);
+    if (hdc != nullptr)
+    {
+        int dpi = ::GetDeviceCaps(hdc, LOGPIXELSX);
+        ::ReleaseDC(hwnd, hdc);
+        if (dpi > 0)
+        {
+            return static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        }
+    }
+    return 1.0f;
 }
 
 bool SciterMainWindow::OnKeyDown(SCITER_ELEMENT /*element*/, SCITER_ELEMENT /*item*/, SciterKeys keyCode, uint32_t keyboardState)
