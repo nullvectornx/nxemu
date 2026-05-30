@@ -241,6 +241,7 @@ nxinterface IFileSysNACP
 {
     virtual uint32_t GetSupportedLanguages() const = 0;
     virtual uint32_t GetParentalControlFlag() const = 0;
+    virtual bool GetUserAccountSwitchLock() const = 0;
     virtual bool GetRatingAge(uint8_t * buffer, uint32_t bufferSize) const = 0;
     virtual const char * GetVersionString() const = 0;
     virtual void Release() = 0;
@@ -316,6 +317,7 @@ nxinterface ISystemloader
     virtual uint32_t GetContentProviderEntriesCount(bool useTitleType, LoaderTitleType titleType, bool useContentRecordType, LoaderContentRecordType contentRecordType, bool useTitleId, unsigned long long titleId) = 0;
     virtual uint32_t GetContentProviderEntries(bool useTitleType, LoaderTitleType titleType, bool useContentRecordType, LoaderContentRecordType contentRecordType, bool useTitleId, unsigned long long titleId, ContentProviderEntry * entries, uint32_t entryCount) = 0;
     virtual IFileSysNCA * GetContentProviderEntry(uint64_t title_id, LoaderContentRecordType type) = 0;
+    virtual IFileSysNACP * ReadControlData() = 0;
     virtual IFileSysNACP * GetPMControlMetadata(uint64_t programID) = 0;
     virtual IManualContentProvider & ManualContentProvider() = 0;
     virtual uint32_t GetInstalledFirmwareDisplayVersion(char * buffer, uint32_t buffer_size) const = 0;

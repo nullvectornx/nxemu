@@ -2,6 +2,8 @@
 #include <memory>
 #include <nxemu-core/notification.h>
 
+__interface ISciterUI;
+
 class Notification :
     public INotification
 {
@@ -14,6 +16,9 @@ public:
     void BreakPoint(const char * fileName, uint32_t lineNumber) override;
     void AppInitDone(void) override;
 
+    void SetSciterContext(ISciterUI * sciterUI, void * parentWindow);
+    void ClearSciterContext();
+
     static Notification & GetInstance();
     static void CleanUp();
 
@@ -22,4 +27,7 @@ private:
     Notification & operator=(const Notification &) = delete;
 
     static std::unique_ptr<Notification> s_instance;
+
+    ISciterUI * m_sciterUI;
+    void * m_parentWindow;
 };

@@ -65,6 +65,7 @@
     <ClInclude Include="settings\ui_settings.h" />
     <ClInclude Include="settings\ui_settings_identifiers.h" />
     <ClInclude Include="startup_checks.h" />
+    <ClInclude Include="user_interface\dpi_scaling.h" />
     <ClInclude Include="user_interface\game_list_worker.h" />
     <ClInclude Include="user_interface\hotkey_map.h" />
     <ClInclude Include="user_interface\key_mappings.h" />

@@ -228,6 +228,11 @@ void SystemModules::ShutDown()
         impl->operatingsystemModule->DestroyOS(impl->operatingsystem);
         impl->operatingsystem = nullptr;
     }
+    if (impl->systemLoader != nullptr && impl->loaderModule.get() != nullptr)
+    {
+        impl->loaderModule->DestroySystemLoader(impl->systemLoader);
+        impl->systemLoader = nullptr;
+    }
     impl = nullptr;
 }
 

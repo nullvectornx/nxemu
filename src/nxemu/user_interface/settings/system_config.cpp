@@ -5,6 +5,7 @@
 #include "system_config_general.h"
 #include "system_config_graphics.h"
 #include "system_config_system.h"
+#include "user_interface/dpi_scaling.h"
 #include <common/std_string.h>
 #include <nxemu-core/settings/identifiers.h>
 #include <nxemu-core/settings/settings.h>
@@ -47,7 +48,10 @@ void SystemConfig::Display(void * parentWindow, const char * startPage)
         subPage = initialPage.substr(separator + 1);
         initialPage = initialPage.substr(0, separator);
     }
-    if (!m_sciterUI.WindowCreate(parentWindow, "system_config.html", 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, SUIW_CHILD, m_window))
+    int width = WINDOW_WIDTH;
+    int height = WINDOW_HEIGHT;
+    ScaleWindowSizeForDpi(parentWindow, width, height);
+    if (!m_sciterUI.WindowCreate(parentWindow, "system_config.html", 0, 0, width, height, SUIW_CHILD, m_window))
     {
         return;
     }
@@ -75,6 +79,7 @@ void SystemConfig::Display(void * parentWindow, const char * startPage)
         SciterElement okButton = root.FindFirst("button[role=\"window-ok\"]");
         m_sciterUI.AttachHandler(okButton, IID_ICLICKSINK, (IClickSink*)this);
     }
+    m_window->FixMinSize();
     m_window->CenterWindow();
 }
 

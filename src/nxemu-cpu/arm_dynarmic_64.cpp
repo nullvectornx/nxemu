@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <yuzu_common/settings.h>
+#include <yuzu_common/logging/log.h>
 #include "arm_dynarmic.h"
 #include "arm_dynarmic_64.h"
 #include "dynarmic/interface/exclusive_monitor.h"
@@ -141,9 +142,31 @@ public:
         g_notify->BreakPoint(__FILE__, __LINE__);
     }
 
-    void ExceptionRaised(uint64_t /*pc*/, Dynarmic::A64::Exception /*exception*/) override
+    void ExceptionRaised(uint64_t pc, Dynarmic::A64::Exception exception) override
     {
-        g_notify->BreakPoint(__FILE__, __LINE__);
+        switch (exception)
+        {
+        case Dynarmic::A64::Exception::WaitForInterrupt:
+        case Dynarmic::A64::Exception::WaitForEvent:
+        case Dynarmic::A64::Exception::SendEvent:
+        case Dynarmic::A64::Exception::SendEventLocal:
+        case Dynarmic::A64::Exception::Yield:
+            return;
+        case Dynarmic::A64::Exception::NoExecuteFault:
+            LOG_CRITICAL(Core_ARM, "Cannot execute instruction at unmapped address {:#016x}", pc);
+            g_notify->BreakPoint(__FILE__, __LINE__);
+            return;
+        default:
+            if (m_debugger_enabled)
+            {
+                g_notify->BreakPoint(__FILE__, __LINE__);
+            }
+            else
+            {
+                m_process.LogBacktrace(m_parent);
+                LOG_CRITICAL(Core_ARM, "ExceptionRaised(exception = {}, pc = {:08X}, code = {:08X})", static_cast<std::size_t>(exception), pc, m_memory.Read32(pc));
+            }
+        }
     }
 
     void CallSVC(uint32_t svc) override

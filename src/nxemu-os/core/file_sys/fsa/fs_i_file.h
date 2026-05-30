@@ -51,6 +51,12 @@ public:
         R_RETURN(this->Read(out, offset, buffer, size, ReadOption::None));
     }
 
+    Result GetSize(s64* out)
+    {
+        R_UNLESS(out != nullptr, ResultNullptrArgument);
+        R_RETURN(this->DoGetSize(out));
+    }
+
     Result Flush()
     {
         R_RETURN(this->DoFlush());

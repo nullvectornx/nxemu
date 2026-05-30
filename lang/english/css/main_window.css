@@ -284,6 +284,17 @@ rombrowser .games-grid[data-size="4"] .rom-card
   margin-bottom: *;
 }
 
+#LoadingPanel .loading-main.no-game-icon .loading-text-column
+{
+  margin-left: *;
+  text-align: center;
+}
+
+#LoadingPanel .loading-main.no-game-icon .loading-progress-wrap
+{
+  width: 20rem;
+}
+
 #LoadingCornerBanner
 {
   horizontal-align: right;

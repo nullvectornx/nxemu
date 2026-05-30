@@ -3,6 +3,7 @@
 #include "core/file_sys/card_image.h"
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/filesystem.h"
+#include "core/file_sys/control_metadata.h"
 #include "core/file_sys/patch_manager.h"
 #include "core/file_sys/registered_cache.h"
 #include "core/file_sys/romfs.h"
@@ -17,6 +18,7 @@
 #include "core/loader/loader.h"
 #include "firmware_zip.h"
 #include "loader_settings.h"
+#include "loader_settings_identifiers.h"
 #include "rom_info.h"
 #include <algorithm>
 #include <cctype>
@@ -257,6 +259,12 @@ std::filesystem::path CreateFirmwareExtractDirectory()
     return {};
 }
 
+void ClearFirmwareInstallProgress()
+{
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, 0);
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallTotal, 0);
+}
+
 void CollectFirmwareSourcesFromPath(const std::filesystem::path & path, const FileSys::VirtualFilesystem & vfs, std::vector<FirmwareInstallSource> & sources)
 {
     std::error_code ec;
@@ -376,10 +384,15 @@ bool InstallFirmwareFilesToRegistered(::FileSystemController & fs_controller, co
         return false;
     }
 
+    int32_t copied = 0;
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallTotal, static_cast<int32_t>(sources.size()));
+    g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, 0);
+
     for (const FirmwareInstallSource & source : sources)
     {
         if (!source.file)
         {
+            ClearFirmwareInstallProgress();
             g_notify->DisplayError("Copying one or more firmware files failed. See the log for details.", "Firmware install failed");
             return false;
         }
@@ -389,11 +402,14 @@ bool InstallFirmwareFilesToRegistered(::FileSystemController & fs_controller, co
         if (!dst_file || !FileSys::VfsRawCopy(source.file, dst_file))
         {
             LOG_ERROR(Core, "Firmware install: copy failed for {}", filename);
+            ClearFirmwareInstallProgress();
             g_notify->DisplayError("Copying one or more firmware files failed. See the log for details.", "Firmware install failed");
             return false;
         }
+        g_settings->SetInt(NXLoaderSetting::FirmwareInstallCurrent, ++copied);
     }
 
+    ClearFirmwareInstallProgress();
     return true;
 }
 
@@ -489,6 +505,9 @@ Systemloader::Systemloader(ISystemModules & modules) :
 
 Systemloader::~Systemloader()
 {
+    impl->m_appLoader.reset();
+    impl->m_file.reset();
+    impl.reset();
 }
 
 bool Systemloader::Initialize()
@@ -757,6 +776,22 @@ uint32_t Systemloader::GetContentProviderEntries(bool useTitleType, LoaderTitleT
 IFileSysNCA * Systemloader::GetContentProviderEntry(uint64_t title_id, LoaderContentRecordType type)
 {
     return GetContentProvider().GetEntryNCA(title_id, type).release();
+}
+
+IFileSysNACP * Systemloader::ReadControlData()
+{
+    if (impl->m_appLoader == nullptr)
+    {
+        return nullptr;
+    }
+
+    FileSys::NACP nacp;
+    if (impl->m_appLoader->ReadControlData(nacp) != LoaderResultStatus::Success)
+    {
+        return nullptr;
+    }
+
+    return new FileSys::NACP(nacp);
 }
 
 IFileSysNACP * Systemloader::GetPMControlMetadata(uint64_t programID)
@@ -1192,6 +1227,8 @@ bool Systemloader::InstallFirmwarePackage(const char * utf8_path)
         return false;
     }
 
+    ClearFirmwareInstallProgress();
+
     FirmwareVersionFormat package_firmware{};
     if (!impl->QueryFirmwarePackage(utf8_path, &package_firmware))
     {
@@ -1232,5 +1269,7 @@ bool Systemloader::InstallFirmwarePackage(const char * utf8_path)
     {
         g_notify->DisplayError("Firmware installed successfully.", "Firmware installed");
     }
+
+    ClearFirmwareInstallProgress();
     return installed;
 }

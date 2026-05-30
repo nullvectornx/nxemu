@@ -1,12 +1,15 @@
 #include "sciter_main_window.h"
+#include "user_interface/notification.h"
 #include "settings/input_config.h"
 #include "settings/system_config.h"
 #include "settings/ui_settings.h"
+#include "user_interface/dpi_scaling.h"
 #include "user_interface/key_mappings.h"
 #include <common/base64.h>
 #include <common/std_string.h>
 #include <nxemu-core/notification.h>
 #include <nxemu-core/settings/identifiers.h>
+#include <nxemu-loader/loader_settings_identifiers.h>
 #include <nxemu-core/settings/settings.h>
 #include <nxemu-core/version.h>
 #include <nxemu-module-spec/operating_system.h>
@@ -45,6 +48,9 @@ enum
     EVENT_EMULATION_STOPPED = 0x2002,
     EVENT_EMULATION_FIRST_FRAME = 0x2003,
     EVENT_DISK_CACHE_STATUS = 0x2004,
+    EVENT_FIRMWARE_INSTALL_DONE = 0x2005,
+    EVENT_FIRMWARE_INSTALL_ACTIVE = 0x2006,
+    EVENT_FIRMWARE_INSTALL_FINISHED = 0x2007,
 };
 
 const uint32_t kKeyboardStateControl = 0x0040u | 0x0080u;
@@ -196,8 +202,7 @@ std::string GetGameTitleLoadingHtml(ISystemloader & loader, const char * verb)
         return stdstr_f("<span class=\"loading-verb\">%s</span> <span class=\"loading-game-name\">...</span>", verb);
     }
     const std::string titleEsc = HtmlEscapeForHtmlContent(std::string(buf.data()));
-    return stdstr_f("<span class=\"loading-verb\">%s</span> <span class=\"loading-game-name\">%s</span>", verb,
-                    titleEsc.c_str());
+    return stdstr_f("<span class=\"loading-verb\">%s</span> <span class=\"loading-game-name\">%s</span>", verb, titleEsc.c_str());
 }
 
 } // namespace
@@ -213,7 +218,9 @@ SciterMainWindow::SciterMainWindow(ISciterUI & sciterUI, const char * windowTitl
     m_lastDiskCacheStatusPostMs(0),
     m_lastPostedDiskCacheStage(0),
     m_shownFirstFrame(false),
-    m_win32Fullscreen(std::make_unique<Win32FullscreenState>())
+    m_win32Fullscreen(std::make_unique<Win32FullscreenState>()),
+    m_firmwareInstallInProgress(false),
+    m_firmwareInstallUiActive(false)
 {
     SettingsStore & settings = SettingsStore::GetInstance();
     settings.RegisterCallback(NXCoreSetting::EmulationRunning, SciterMainWindow::EmulationRunning, this);
@@ -222,6 +229,7 @@ SciterMainWindow::SciterMainWindow(ISciterUI & sciterUI, const char * windowTitl
     settings.RegisterCallback(NXCoreSetting::GameName, SciterMainWindow::GameNameChanged, this);
     settings.RegisterCallback(NXCoreSetting::DisplayedFrames, SciterMainWindow::DisplayedFramesChanged, this);
     settings.RegisterCallback(NXCoreSetting::DiskCacheLoadTick, SciterMainWindow::DiskCacheLoadChanged, this);
+    settings.RegisterCallback(NXLoaderSetting::FirmwareInstallTotal, SciterMainWindow::FirmwareInstallTotalChanged, this);
     settings.RegisterCallback(NXOsSetting::AudioMuted, SciterMainWindow::SettingChanged, this);
     settings.RegisterCallback(NXOsSetting::AudioVolume, SciterMainWindow::SettingChanged, this);
     settings.RegisterCallback(NXOsSetting::ResolutionUpFactor, SciterMainWindow::SettingChanged, this);
@@ -298,6 +306,7 @@ const std::string * SciterMainWindow::MenuIconSvg(GuiAction action)
 
 SciterMainWindow::~SciterMainWindow()
 {
+    Notification::GetInstance().ClearSciterContext();
     m_WebBrowser.DetachWindow();
 
     SettingsStore & settings = SettingsStore::GetInstance();
@@ -307,6 +316,7 @@ SciterMainWindow::~SciterMainWindow()
     settings.UnregisterCallback(NXCoreSetting::GameName, SciterMainWindow::GameNameChanged, this);
     settings.UnregisterCallback(NXCoreSetting::DisplayedFrames, SciterMainWindow::DisplayedFramesChanged, this);
     settings.UnregisterCallback(NXCoreSetting::DiskCacheLoadTick, SciterMainWindow::DiskCacheLoadChanged, this);
+    settings.UnregisterCallback(NXLoaderSetting::FirmwareInstallTotal, SciterMainWindow::FirmwareInstallTotalChanged, this);
     settings.UnregisterCallback(NXOsSetting::AudioMuted, SciterMainWindow::SettingChanged, this);
     settings.UnregisterCallback(NXOsSetting::AudioVolume, SciterMainWindow::SettingChanged, this);
     settings.UnregisterCallback(NXOsSetting::ResolutionUpFactor, SciterMainWindow::SettingChanged, this);
@@ -316,6 +326,11 @@ SciterMainWindow::~SciterMainWindow()
     settings.UnregisterCallback(NXOsSetting::DockedMode, SciterMainWindow::SettingChanged, this);
     settings.UnregisterCallback(NXUISetting::Hotkeys, SciterMainWindow::HotKeysChanged, this);
 
+    m_rootElement.SetTimer(0, (uint32_t *)TIMER_UPDATE_INSTALL_FIRMWARE);
+    if (m_firmwareInstallThread.joinable())
+    {
+        m_firmwareInstallThread.join();
+    }
     m_systemConfig.reset(nullptr);
     m_inputConfig.reset(nullptr);
 
@@ -406,7 +421,7 @@ void SciterMainWindow::ResetMenu()
     optionsMenu.push_back(MenuBarItem(static_cast<int32_t>(GuiAction::OpenControllersDialog), "&Controllers...", nullptr, HotkeyAccelerator(Hotkey::Controllers), MenuBarItem::CheckState::None, MenuIconSvg(GuiAction::OpenControllersDialog)));
     optionsMenu.push_back(MenuBarItem(static_cast<int32_t>(GuiAction::OpenSystemConfiguration), "Confi&gure...", nullptr, HotkeyAccelerator(Hotkey::Configure), MenuBarItem::CheckState::None, MenuIconSvg(GuiAction::OpenSystemConfiguration)));
     MenuBarItemList installFirmwareMenu;
-    if (!m_emulationRunning && m_modules.IsValid())
+    if (!m_emulationRunning && !m_firmwareInstallInProgress && m_modules.IsValid())
     {
         optionsMenu.push_back(MenuBarItem(MenuBarItem::SPLITER));
         const std::string * installFirmwareSvg = MenuIconSvg(GuiAction::InstallFirmwareFromFile);
@@ -428,7 +443,10 @@ bool SciterMainWindow::Show()
         WINDOW_WIDTH = 760,
     };
 
-    if (!m_sciterUI.WindowCreate(nullptr, "main_window.html", 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, SUIW_MAIN | SUIW_HIDDEN, m_window))
+    int width = WINDOW_WIDTH;
+    int height = WINDOW_HEIGHT;
+    ScaleWindowSizeForDpi(nullptr, width, height);
+    if (!m_sciterUI.WindowCreate(nullptr, "main_window.html", 0, 0, width, height, SUIW_MAIN | SUIW_HIDDEN, m_window))
     {
         return false;
     }
@@ -491,6 +509,7 @@ bool SciterMainWindow::Show()
     {
         PopulateVulkanRecords(m_vkDeviceRecords, RenderSurface());
     }
+    Notification::GetInstance().SetSciterContext(&m_sciterUI, (void *)m_window->GetHandle());
     m_window->Show();
     return true;
 }
@@ -642,6 +661,12 @@ void SciterMainWindow::EmulationStateChanged(const char * /*setting*/, void * us
     if (state == EmulationState::RomLoaded)
     {
         impl->UpdateLoadingScreenDetails();
+        SciterElement loadingMain(impl->m_rootElement.FindFirst("#LoadingPanel .loading-main"));
+        if (loadingMain.IsValid())
+        {
+            loadingMain.RemoveClassName("no-game-icon");
+        }
+        impl->RefreshDiskCacheLoadingText();
         impl->m_shownFirstFrame = false;
         impl->ShowPanel(Panel::Loading);
     }
@@ -837,7 +862,7 @@ void SciterMainWindow::OnOpenFile()
 
 void SciterMainWindow::OnInstallFirmwareFromFile()
 {
-    if (m_window == nullptr || m_emulationRunning || !m_modules.IsValid())
+    if (m_window == nullptr || m_emulationRunning || !m_modules.IsValid() || m_firmwareInstallInProgress)
     {
         return;
     }
@@ -850,13 +875,12 @@ void SciterMainWindow::OnInstallFirmwareFromFile()
         return;
     }
 
-    m_modules.Modules().Systemloader().InstallFirmwarePackage(file);
-    UpdateEmulationStatusText();
+    BeginFirmwareInstall(file);
 }
 
 void SciterMainWindow::OnInstallFirmwareFromFolder()
 {
-    if (m_window == nullptr || m_emulationRunning || !m_modules.IsValid())
+    if (m_window == nullptr || m_emulationRunning || !m_modules.IsValid() || m_firmwareInstallInProgress)
     {
         return;
     }
@@ -868,8 +892,166 @@ void SciterMainWindow::OnInstallFirmwareFromFolder()
         return;
     }
 
-    m_modules.Modules().Systemloader().InstallFirmwarePackage((const char *)folder);
+    BeginFirmwareInstall((const char *)folder);
+}
+
+void SciterMainWindow::RefreshFirmwareInstallLoading()
+{
+    SettingsStore & settings = SettingsStore::GetInstance();
+    const uint32_t current = static_cast<uint32_t>(settings.GetInt(NXLoaderSetting::FirmwareInstallCurrent));
+    const uint32_t total = static_cast<uint32_t>(settings.GetInt(NXLoaderSetting::FirmwareInstallTotal));
+
+    SciterElement fillEl(m_rootElement.GetElementByID("LoadingProgressFill"));
+    SciterElement status(m_rootElement.GetElementByID("loadingText"));
+
+    std::string detail;
+    if (total > 0)
+    {
+        detail = stdstr_f("%u / %u files", current, total);
+        if (fillEl.IsValid())
+        {
+            const int pct = static_cast<int>((100.0 * static_cast<double>(current)) / static_cast<double>(total));
+            UpdateLoadingProgressBar(fillEl, false, pct, false);
+        }
+    }
+    else if (fillEl.IsValid())
+    {
+        UpdateLoadingProgressBar(fillEl, true, 0, false);
+    }
+
+    if (status.IsValid())
+    {
+        const std::string text = stdstr_f("<span class=\"loading-verb\">Installing firmware</span> <span class=\"loading-game-name\">%s</span>",HtmlEscapeForHtmlContent(detail).c_str());
+        status.SetHTML(reinterpret_cast<const uint8_t *>(text.c_str()), text.size());
+    }
+    m_sciterUI.UpdateWindow(m_rootElement.GetElementHwnd(true));
+}
+
+void SciterMainWindow::StartFirmwareInstallUi()
+{
+    if (m_firmwareInstallUiActive)
+    {
+        return;
+    }
+
+    m_firmwareInstallUiActive = true;
+
+    SciterElement fillEl(m_rootElement.GetElementByID("LoadingProgressFill"));
+    SciterElement status(m_rootElement.GetElementByID("loadingText"));
+    if (fillEl.IsValid())
+    {
+        UpdateLoadingProgressBar(fillEl, true, 0, false);
+    }
+    if (status.IsValid())
+    {
+        const std::string text = "<span class=\"loading-verb\">Installing firmware</span>";
+        status.SetHTML(reinterpret_cast<const uint8_t *>(text.c_str()), text.size());
+    }
+    LoadImageToElement(m_rootElement.GetElementByID("LoadingCornerLogo"), {});
+    LoadImageToElement(m_rootElement.GetElementByID("LoadingCornerBanner"), {});
+    LoadImageToElement(m_rootElement.GetElementByID("LoadingGameIcon"), {});
+    SciterElement loadingMain(m_rootElement.FindFirst("#LoadingPanel .loading-main"));
+    if (loadingMain.IsValid())
+    {
+        loadingMain.AddClassName("no-game-icon");
+    }
+    ShowPanel(Panel::Loading);
+    m_sciterUI.UpdateWindow(m_rootElement.GetElementHwnd(true));
+
+    if (!m_emulationRunning)
+    {
+        ResetMenu();
+    }
+    m_rootElement.SetTimer(25, (uint32_t *)TIMER_UPDATE_INSTALL_FIRMWARE);
+    RefreshFirmwareInstallLoading();
+}
+
+void SciterMainWindow::StopFirmwareInstallUi()
+{
+    if (!m_firmwareInstallUiActive)
+    {
+        return;
+    }
+
+    m_firmwareInstallUiActive = false;
+    m_rootElement.SetTimer(0, (uint32_t *)TIMER_UPDATE_INSTALL_FIRMWARE);
+
+    SciterElement loadingMain(m_rootElement.FindFirst("#LoadingPanel .loading-main"));
+    if (loadingMain.IsValid())
+    {
+        loadingMain.RemoveClassName("no-game-icon");
+    }
+
+    const EmulationState state = static_cast<EmulationState>(SettingsStore::GetInstance().GetInt(NXCoreSetting::EmulationState));
+    if (state == EmulationState::Running && m_shownFirstFrame)
+    {
+        ShowPanel(Panel::Renderer);
+    }
+    else if (state == EmulationState::Paused)
+    {
+        ShowPanel(Panel::Pause);
+    }
+    else if (state == EmulationState::RomLoaded)
+    {
+        ShowPanel(Panel::Loading);
+        RefreshDiskCacheLoadingText();
+    }
+    else
+    {
+        ShowPanel(Panel::RomBrowser);
+    }
+
     UpdateEmulationStatusText();
+    if (!m_emulationRunning)
+    {
+        ResetMenu();
+    }
+}
+
+void SciterMainWindow::FinishFirmwareInstall()
+{
+    if (m_firmwareInstallThread.joinable())
+    {
+        m_firmwareInstallThread.join();
+    }
+    m_firmwareInstallInProgress = false;
+    StopFirmwareInstallUi();
+    UpdateEmulationStatusText();
+    if (!m_emulationRunning)
+    {
+        ResetMenu();
+    }
+}
+
+void SciterMainWindow::BeginFirmwareInstall(const char * utf8_path)
+{
+    if (utf8_path == nullptr || utf8_path[0] == '\0' || m_firmwareInstallInProgress || !m_modules.IsValid())
+    {
+        return;
+    }
+
+    m_firmwareInstallInProgress = true;
+    m_rootElement.PostEvent(EVENT_FIRMWARE_INSTALL_ACTIVE);
+
+    const std::string path = utf8_path;
+    m_firmwareInstallThread = std::thread([this, path]() {
+        m_modules.Modules().Systemloader().InstallFirmwarePackage(path.c_str());
+        m_rootElement.PostEvent(EVENT_FIRMWARE_INSTALL_DONE);
+    });
+}
+
+void SciterMainWindow::FirmwareInstallTotalChanged(const char * /*setting*/, void * userData)
+{
+    SciterMainWindow * impl = static_cast<SciterMainWindow *>(userData);
+    const int32_t total = SettingsStore::GetInstance().GetInt(NXLoaderSetting::FirmwareInstallTotal);
+    if (total > 0)
+    {
+        impl->m_rootElement.PostEvent(EVENT_FIRMWARE_INSTALL_ACTIVE);
+    }
+    else if (impl->m_firmwareInstallUiActive)
+    {
+        impl->m_rootElement.PostEvent(EVENT_FIRMWARE_INSTALL_FINISHED);
+    }
 }
 
 void SciterMainWindow::OnFileExit()
@@ -1163,7 +1345,40 @@ void * SciterMainWindow::RenderSurface() const
 
 float SciterMainWindow::PixelRatio() const
 {
-    return 1.0;
+    HWND hwnd = nullptr;
+    if (m_renderWindow != nullptr)
+    {
+        hwnd = (HWND)m_renderWindow;
+    }
+    else if (m_window != nullptr)
+    {
+        hwnd = (HWND)m_window->GetHandle();
+    }
+
+    typedef UINT (WINAPI * PFN_GetDpiForWindow)(HWND);
+    static PFN_GetDpiForWindow pGetDpiForWindow = reinterpret_cast<PFN_GetDpiForWindow>(
+        ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+
+    if (hwnd != nullptr && pGetDpiForWindow != nullptr)
+    {
+        UINT dpi = pGetDpiForWindow(hwnd);
+        if (dpi != 0)
+        {
+            return static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        }
+    }
+
+    HDC hdc = ::GetDC(hwnd);
+    if (hdc != nullptr)
+    {
+        int dpi = ::GetDeviceCaps(hdc, LOGPIXELSX);
+        ::ReleaseDC(hwnd, hdc);
+        if (dpi > 0)
+        {
+            return static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+        }
+    }
+    return 1.0f;
 }
 
 bool SciterMainWindow::OnKeyDown(SCITER_ELEMENT /*element*/, SCITER_ELEMENT /*item*/, SciterKeys keyCode, uint32_t keyboardState)
@@ -1314,6 +1529,12 @@ void SciterMainWindow::UpdateLoadingScreenDetails()
     LoadImageToElement(m_rootElement.GetElementByID("LoadingCornerLogo"), logoData);
     LoadImageToElement(m_rootElement.GetElementByID("LoadingCornerBanner"), bannerData);
     LoadImageToElement(m_rootElement.GetElementByID("LoadingGameIcon"), iconData);
+
+    SciterElement loadingMain(m_rootElement.FindFirst("#LoadingPanel .loading-main"));
+    if (loadingMain.IsValid())
+    {
+        loadingMain.RemoveClassName("no-game-icon");
+    }
 }
 
 void SciterMainWindow::UpdateUIVisibility()
@@ -1618,6 +1839,13 @@ bool SciterMainWindow::OnTimer(SCITER_ELEMENT /*element*/, uint32_t * timerId)
     {
         UpdateEmulationStatusText();
     }
+    else if (timerId == (uint32_t *)TIMER_UPDATE_INSTALL_FIRMWARE)
+    {
+        if (m_firmwareInstallUiActive)
+        {
+            RefreshFirmwareInstallLoading();
+        }
+    }
     return true;
 }
 
@@ -1669,6 +1897,18 @@ bool SciterMainWindow::OnEvent(SCITER_ELEMENT element, SCITER_ELEMENT /*source*/
     else if (event_code == EVENT_DISK_CACHE_STATUS)
     {
         RefreshDiskCacheLoadingText();
+    }
+    else if (event_code == EVENT_FIRMWARE_INSTALL_ACTIVE)
+    {
+        StartFirmwareInstallUi();
+    }
+    else if (event_code == EVENT_FIRMWARE_INSTALL_FINISHED)
+    {
+        StopFirmwareInstallUi();
+    }
+    else if (event_code == EVENT_FIRMWARE_INSTALL_DONE)
+    {
+        FinishFirmwareInstall();
     }
     return false;
 }

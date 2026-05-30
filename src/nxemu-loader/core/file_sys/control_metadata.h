@@ -114,12 +114,12 @@ public:
     uint64_t GetDefaultNormalSaveSize() const;
     uint64_t GetDefaultJournalSaveSize() const;
     std::vector<u8> GetRawBytes() const;
-    bool GetUserAccountSwitchLock() const;
     uint64_t GetDeviceSaveDataSize() const;
 
     //IFileSysNACP
     uint32_t GetSupportedLanguages() const override;
     uint32_t GetParentalControlFlag() const override;
+    bool GetUserAccountSwitchLock() const override;
     bool GetRatingAge(uint8_t* buffer, uint32_t bufferSize) const override;
     const char * GetVersionString() const override;
     void Release() override;

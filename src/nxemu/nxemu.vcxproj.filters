@@ -161,6 +161,9 @@
     <ClInclude Include="user_interface\game_list_worker.h">
       <Filter>Header Files\user_interface</Filter>
     </ClInclude>
+    <ClInclude Include="user_interface\dpi_scaling.h">
+      <Filter>Header Files\user_interface</Filter>
+    </ClInclude>
     <ClInclude Include="user_interface\widgets\rom_browser.h">
       <Filter>Header Files\user_interface\widgets</Filter>
     </ClInclude>

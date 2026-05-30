@@ -55,8 +55,7 @@ Result IFile::GetSize(Out<s64> out_size)
 {
     LOG_DEBUG(Service_FS, "called");
 
-    UNIMPLEMENTED();
-    R_SUCCEED()
+    R_RETURN(backend->GetSize(out_size));
 }
 
 } // namespace Service::FileSystem
