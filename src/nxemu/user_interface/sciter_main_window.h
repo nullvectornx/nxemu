@@ -23,6 +23,7 @@ class InputConfig;
 
 class SciterMainWindow :
     public IWindowDestroySink,
+    public IWindowCloseSink,
     public IMenuBarSink,
     public IRenderWindow,
     public IKeySink,
@@ -105,6 +106,7 @@ private:
 
     void OnOpenFile();
     void OnFileExit();
+    bool ConfirmCloseEmulator();
     void OnStopGame();
     void OnPauseContinueGame();
     void OnSystemConfig();
@@ -145,6 +147,9 @@ private:
 
     // IWindowDestroySink
     void OnWindowDestroy(HWINDOW hWnd) override;
+
+    // IWindowCloseSink
+    bool OnWindowCloseRequest(HWINDOW hWnd);
 
     // IMenuBarSink
     void OnMenuItem(int32_t id, SCITER_ELEMENT item) override;
