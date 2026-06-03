@@ -20,7 +20,7 @@ class InputConfigPlayer :
 
 public:
     InputConfigPlayer(ISciterUI& sciterUI, InputConfig & config, SystemModules & modules, HWINDOW parent, SciterElement page, NpadIdType controllerIndex);
-    ~InputConfigPlayer() = default;
+    ~InputConfigPlayer();
 
     void SaveSetting();
 
@@ -110,4 +110,5 @@ private:
     std::chrono::steady_clock::time_point m_stickUiThrottleLast;
     std::chrono::steady_clock::time_point m_motionUiThrottleLast;
     NpadStyleIndex m_displayedControllerLayout;
+    bool m_callbackEnabled;
 };

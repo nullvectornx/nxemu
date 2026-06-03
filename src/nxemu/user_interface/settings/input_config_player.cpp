@@ -572,7 +572,8 @@ InputConfigPlayer::InputConfigPlayer(ISciterUI & sciterUI, InputConfig & config,
     m_pollingType(PollingInputType::None),
     m_pollingButtonId(0),
     m_stickUiThrottleLast{},
-    m_displayedControllerLayout(NpadStyleIndex::None)
+    m_displayedControllerLayout(NpadStyleIndex::None),
+    m_callbackEnabled(true)
 {
     memset(&m_buttonValues, 0, sizeof(m_buttonValues));
     m_emulatedController = &m_emulatedControllerPlayer;
@@ -583,6 +584,24 @@ InputConfigPlayer::InputConfigPlayer(ISciterUI & sciterUI, InputConfig & config,
     UpdateControllerEnabledButtons();
     UpdateControllerButtonNames();
     UpdateMotionButtons();
+}
+
+InputConfigPlayer::~InputConfigPlayer()
+{
+    m_callbackEnabled = false;
+    if (m_emulatedController != nullptr)
+    {
+        m_emulatedController->SetControllerEventCallback(nullptr, nullptr);
+    }
+    if (m_pollingType != PollingInputType::None)
+    {
+        m_operatingSystem.StopMapping();
+    }
+    if (m_page.IsValid())
+    {
+        m_page.SetTimer(0, (uint32_t *)TIMER_TIMEOUT);
+        m_page.SetTimer(0, (uint32_t *)TIMER_POLL);
+    }
 }
 
 void InputConfigPlayer::SaveSetting()
@@ -1480,6 +1499,10 @@ void InputConfigPlayer::HandleClick(SciterElement & button, uint32_t buttonId, P
 
 void InputConfigPlayer::RefreshStickUi()
 {
+    if (!m_callbackEnabled || !m_page.IsValid())
+    {
+        return;
+    }
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
     if (m_stickUiThrottleLast != std::chrono::steady_clock::time_point{} &&
         (now - m_stickUiThrottleLast) < std::chrono::milliseconds(50))
@@ -1508,6 +1531,10 @@ void InputConfigPlayer::RefreshStickUi()
 
 void InputConfigPlayer::ControllerEventCallback(ControllerTriggerType type)
 {
+    if (!m_callbackEnabled)
+    {
+        return;
+    }
     switch (type) {
     case ControllerTriggerType::Button:
     case ControllerTriggerType::Trigger:
@@ -1804,6 +1831,10 @@ void InputConfigPlayer::UpdateControllerButtonNames()
 
 void InputConfigPlayer::UpdateButtonState()
 {
+    if (!m_callbackEnabled || !m_page.IsValid())
+    {
+        return;
+    }
     struct BtnMap 
     {
         uint32_t idx; 
@@ -1927,6 +1958,10 @@ void InputConfigPlayer::UpdateMotionButtons()
 
 void InputConfigPlayer::UpdateMotionCube()
 {
+    if (!m_callbackEnabled || !m_page.IsValid())
+    {
+        return;
+    }
     if (m_comboControllerType == nullptr)
     {
         return;

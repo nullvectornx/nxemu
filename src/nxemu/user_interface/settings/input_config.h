@@ -17,7 +17,8 @@ class InputConfig :
     public IPagesSink,
     public IClickSink,
     public IKeySink,
-    public IWindowDestroySink
+    public IWindowDestroySink,
+    public IWindowCloseSink
 {
     typedef std::unordered_map<std::string, std::pair<size_t, NpadIdType>> PlayerInfo;
 
@@ -46,10 +47,15 @@ public:
     // IWindowDestroySink
     void OnWindowDestroy(HWINDOW hWnd) override;
 
+    // IWindowCloseSink
+    bool OnWindowCloseRequest(HWINDOW hWnd) override;
+
 private:
     InputConfig() = delete;
     InputConfig(const InputConfig &) = delete;
     InputConfig & operator=(const InputConfig &) = delete;
+
+    void ShutdownPlayers();
 
     ISciterUI & m_sciterUI;
     SystemModules & m_modules;

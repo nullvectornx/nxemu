@@ -24,6 +24,7 @@ InputConfig::InputConfig(ISciterUI & SciterUI, SystemModules & modules) :
 
 InputConfig::~InputConfig()
 {
+    ShutdownPlayers();
     if (m_inputDeviceList != nullptr)
     {
         m_inputDeviceList->Release();
@@ -33,11 +34,12 @@ InputConfig::~InputConfig()
 
 void InputConfig::Display(void * parentWindow)
 {
-    if (!m_modules.IsValid() || !m_sciterUI.WindowCreate(parentWindow, "input_config.html", 0, 0, 300, 300, SUIW_CHILD, m_window))
+    if (!m_modules.IsValid() || !m_sciterUI.WindowCreate(parentWindow, "input_config.html", 0, 0, 0, 0, SUIW_CHILD, m_window))
     {
         return;
     }
     m_window->OnDestroySinkAdd((IWindowDestroySink *)this);
+    m_window->OnCloseSinkAdd((IWindowCloseSink *)this);
 
     IOperatingSystem & operatingSystem = m_modules.Modules().OperatingSystem();
     m_inputDeviceList = operatingSystem.GetInputDevices();
@@ -130,14 +132,35 @@ bool InputConfig::OnKeyChar(SCITER_ELEMENT element, SCITER_ELEMENT item, SciterK
     return m_playerCurrent != nullptr ? m_playerCurrent->OnKeyChar(element, item, keyCode, keyboardState) : false;
 }
 
+void InputConfig::ShutdownPlayers()
+{
+    for (size_t i = 0, n = sizeof(m_playerConfig) / sizeof(m_playerConfig[0]); i < n; i++)
+    {
+        m_playerConfig[i].reset();
+    }
+    m_playerCurrent = nullptr;
+}
+
+bool InputConfig::OnWindowCloseRequest(HWINDOW hWnd)
+{
+    if (m_window != nullptr && hWnd == m_window->GetHandle())
+    {
+        ShutdownPlayers();
+    }
+    return true;
+}
+
 void InputConfig::OnWindowDestroy(HWINDOW hWnd)
 {
-    if (hWnd == m_window->GetHandle())
+    if (m_window == nullptr || hWnd != m_window->GetHandle())
     {
-        if (m_inputDeviceList)
-        {
-            m_inputDeviceList->Release();
-            m_inputDeviceList = nullptr;
-        }
+        return;
     }
+    ShutdownPlayers();
+    if (m_inputDeviceList != nullptr)
+    {
+        m_inputDeviceList->Release();
+        m_inputDeviceList = nullptr;
+    }
+    m_window = nullptr;
 }

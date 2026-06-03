@@ -36,8 +36,8 @@ void SystemConfig::Display(void * parentWindow, const char * startPage)
 
     enum
     {
-        WINDOW_HEIGHT = 720,
-        WINDOW_WIDTH = 1050,
+        WINDOW_HEIGHT = 576,
+        WINDOW_WIDTH = 840,
     };
 
     std::string initialPage(startPage != nullptr ? startPage : ""), subPage;
