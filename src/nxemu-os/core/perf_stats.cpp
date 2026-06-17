@@ -14,6 +14,7 @@
 #include "yuzu_common/fs/fs.h"
 #include "yuzu_common/fs/path_util.h"
 #include "yuzu_common/settings.h"
+#include "os_settings.h"
 #include "core/perf_stats.h"
 
 using namespace std::chrono_literals;
@@ -126,14 +127,14 @@ double PerfStats::GetLastFrameTimeScale() const {
 }
 
 void SpeedLimiter::DoSpeedLimiting(microseconds current_system_time_us) {
-    if (Settings::values.use_multi_core.GetValue() ||
-        !Settings::values.use_speed_limit.GetValue()) {
+    if (osSettings.use_multi_core ||
+        !osSettings.use_speed_limit) {
         return;
     }
 
     auto now = Clock::now();
 
-    const double sleep_scale = Settings::values.speed_limit.GetValue() / 100.0;
+    const double sleep_scale = osSettings.speed_limit / 100.0;
 
     // Max lag caused by slow frames. Shouldn't be more than the length of a frame at the current
     // speed percent or it will clamp too much and prevent this from properly limiting to that

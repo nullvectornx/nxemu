@@ -14,7 +14,7 @@ EmulatedConsole::~EmulatedConsole() = default;
 void EmulatedConsole::ReloadFromSettings()
 {
     // Using first motion device from player 1. No need to assign any unique config at the moment
-    const auto & player = osSettings.players.GetValue()[0];
+    const auto & player = osSettings.players[0];
     motion_params[0] = Common::ParamPackage(player.motions[0]);
 
     ReloadInput();
@@ -50,7 +50,7 @@ void EmulatedConsole::SetTouchParams()
     }
 
     const auto button_index =
-        static_cast<u64>(osSettings.touch_from_button_map_index.GetValue());
+        static_cast<u64>(osSettings.touch_from_button_map_index);
     const auto & touch_buttons = osSettings.touch_from_button_maps[button_index].buttons;
 
     // Map the rest of the fingers from touch from button configuration

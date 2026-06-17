@@ -19,7 +19,7 @@ namespace Service::SPL
 Module::Interface::Interface(Core::System & system_, std::shared_ptr<Module> module_, const char * name) :
     ServiceFramework{system_, name},
     module{std::move(module_)},
-    rng(osSettings.rng_seed_enabled ? osSettings.rng_seed.GetValue() : static_cast<u32>(std::time(nullptr)))
+    rng(osSettings.rng_seed_enabled ? osSettings.rng_seed : static_cast<u32>(std::time(nullptr)))
 {
 }
 

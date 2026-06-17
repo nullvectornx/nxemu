@@ -65,7 +65,7 @@ struct System::Impl {
 
     void Initialize(System& system)
     {
-        is_multicore = true; // Settings::values.use_multi_core.GetValue();
+        is_multicore = true; // osSettings.use_multi_core;
 
         core_timing.SetMulticore(is_multicore);
         core_timing.Initialize([&system]() { system.RegisterHostThread(); });
@@ -84,7 +84,7 @@ struct System::Impl {
     void ReinitializeIfNecessary(System & system)
     {
         const bool must_reinitialize = false;
-        //    is_multicore != Settings::values.use_multi_core.GetValue() ||
+        //    is_multicore != osSettings.use_multi_core ||
         //    extended_memory_layout != (Settings::values.memory_layout_mode.GetValue() !=
         //                               Settings::MemoryLayout::Memory_4Gb);
 
@@ -95,7 +95,7 @@ struct System::Impl {
 
         LOG_DEBUG(Kernel, "Re-initializing");
 
-        // is_multicore = Settings::values.use_multi_core.GetValue();
+        // is_multicore = osSettings.use_multi_core;
         // extended_memory_layout =
         //     Settings::values.memory_layout_mode.GetValue() != Settings::MemoryLayout::Memory_4Gb;
 

@@ -25,12 +25,8 @@ AudioCore ::~AudioCore()
 
 void AudioCore::CreateSinks()
 {
-    const auto & sink_id{osSettings.sink_id};
-    const auto & audio_output_device_id{osSettings.audio_output_device_id};
-    const auto & audio_input_device_id{osSettings.audio_input_device_id};
-
-    output_sink = Sink::CreateSinkFromID(sink_id.GetValue(), audio_output_device_id.GetValue());
-    input_sink = Sink::CreateSinkFromID(sink_id.GetValue(), audio_input_device_id.GetValue());
+    output_sink = Sink::CreateSinkFromID(osSettings.sink_id, osSettings.audio_output_device_id);
+    input_sink = Sink::CreateSinkFromID(osSettings.sink_id, osSettings.audio_input_device_id);
 }
 
 void AudioCore::Shutdown()

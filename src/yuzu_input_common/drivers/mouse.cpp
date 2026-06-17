@@ -111,9 +111,9 @@ void Mouse::UpdateStickInput()
 
     // Decay input over time
     const float clamped_length = std::min(1.0f, length);
-    const float decay_strength = osSettings.mouse_panning_decay_strength.GetValue();
+    const float decay_strength = osSettings.mouse_panning_decay_strength;
     const float decay = 1 - clamped_length * clamped_length * decay_strength * 0.01f;
-    const float min_decay = osSettings.mouse_panning_min_decay.GetValue();
+    const float min_decay = osSettings.mouse_panning_min_decay;
     const float clamped_decay = std::min(1 - min_decay / 100.0f, decay);
     last_mouse_change *= clamped_decay;
 }
@@ -159,9 +159,9 @@ void Mouse::Move(int x, int y, int center_x, int center_y)
     if (IsMousePanningEnabled())
     {
         const auto mouse_change = (Common::MakeVec(x, y) - Common::MakeVec(center_x, center_y)).Cast<float>();
-        const float x_sensitivity = osSettings.mouse_panning_x_sensitivity.GetValue() * default_panning_sensitivity;
-        const float y_sensitivity = osSettings.mouse_panning_y_sensitivity.GetValue() * default_panning_sensitivity;
-        const float deadzone_counterweight = osSettings.mouse_panning_deadzone_counterweight.GetValue() * default_deadzone_counterweight;
+        const float x_sensitivity = osSettings.mouse_panning_x_sensitivity * default_panning_sensitivity;
+        const float y_sensitivity = osSettings.mouse_panning_y_sensitivity * default_panning_sensitivity;
+        const float deadzone_counterweight = osSettings.mouse_panning_deadzone_counterweight * default_deadzone_counterweight;
 
         last_motion_change += {-mouse_change.y * x_sensitivity, -mouse_change.x * y_sensitivity, 0};
         last_mouse_change.x += mouse_change.x * x_sensitivity;
@@ -181,8 +181,8 @@ void Mouse::Move(int x, int y, int center_x, int center_y)
     if (button_pressed)
     {
         const auto mouse_move = Common::MakeVec<int>(x, y) - mouse_origin;
-        const float x_sensitivity = osSettings.mouse_panning_x_sensitivity.GetValue() * default_stick_sensitivity;
-        const float y_sensitivity = osSettings.mouse_panning_y_sensitivity.GetValue() * default_stick_sensitivity;
+        const float x_sensitivity = osSettings.mouse_panning_x_sensitivity * default_stick_sensitivity;
+        const float y_sensitivity = osSettings.mouse_panning_y_sensitivity * default_stick_sensitivity;
         SetAxis(identifier, mouse_axis_x, static_cast<float>(mouse_move.x) * x_sensitivity);
         SetAxis(identifier, mouse_axis_y, static_cast<float>(-mouse_move.y) * y_sensitivity);
 

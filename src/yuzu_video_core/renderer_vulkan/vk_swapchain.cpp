@@ -7,8 +7,10 @@
 #include <vector>
 
 #include "yuzu_common/logging/log.h"
+#include "nxemu-os/os_settings_identifiers.h"
 #include "yuzu_common/polyfill_ranges.h"
 #include "yuzu_common/settings.h"
+#include <nxemu-module-spec/base.h>
 #include "yuzu_video_core/renderer_vulkan/vk_scheduler.h"
 #include "yuzu_video_core/renderer_vulkan/vk_swapchain.h"
 #include "yuzu_video_core/vulkan_common/vk_enum_string_helper.h"
@@ -16,6 +18,8 @@
 #include "yuzu_video_core/vulkan_common/vulkan_wrapper.h"
 #include "vulkan/vulkan_core.h"
 #include "video_settings.h"
+
+extern IModuleSettings * g_settings;
 
 namespace Vulkan {
 
@@ -42,7 +46,7 @@ static VkPresentModeKHR ChooseSwapPresentMode(bool has_imm, bool has_mailbox,
     VSyncMode setting = [has_imm, has_mailbox]() {
         // Choose Mailbox or Immediate if unlocked and those modes are supported
         const auto mode = videoSettings.vsync_mode;
-        if (Settings::values.use_speed_limit.GetValue()) {
+        if (g_settings->GetBool(NXOsSetting::UseSpeedLimit)) {
             return mode;
         }
         switch (mode) {

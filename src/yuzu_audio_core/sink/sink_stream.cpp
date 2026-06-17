@@ -36,7 +36,7 @@ void SinkStream::AppendBuffer(SinkBuffer & buffer, std::span<s16> samples)
 
     constexpr s32 min{std::numeric_limits<s16>::min()};
     constexpr s32 max{std::numeric_limits<s16>::max()};
-    f32 yuzu_volume = osSettings.audio_muted ? 0.0f : osSettings.volume.GetValue() / static_cast<f32>(osSettings.volume.GetDefault());
+    f32 yuzu_volume = osSettings.audio_muted ? 0.0f : osSettings.volume / 100.0f;
     if (yuzu_volume > 1.0f)
     {
         yuzu_volume = 0.6f + 20 * std::log10(yuzu_volume);

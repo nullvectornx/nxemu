@@ -7,6 +7,7 @@
 #include "core/hle/service/set/key_code_map.h"
 #include "os_settings.h"
 #include "yuzu_common/logging/log.h"
+#include <yuzu_common/settings.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -120,9 +121,9 @@ ISettingsServer::~ISettingsServer() = default;
 
 Result ISettingsServer::GetLanguageCode(Out<LanguageCode> out_language_code)
 {
-    LOG_DEBUG(Service_SET, "called {}", osSettings.language_index.GetValue());
+    LOG_DEBUG(Service_SET, "called {}", osSettings.language_index);
 
-    *out_language_code = available_language_codes[static_cast<std::size_t>(osSettings.language_index.GetValue())];
+    *out_language_code = available_language_codes[static_cast<std::size_t>(osSettings.language_index)];
     R_SUCCEED();
 }
 
@@ -161,7 +162,7 @@ Result ISettingsServer::GetRegionCode(Out<SystemRegionCode> out_region_code)
 {
     LOG_DEBUG(Service_SET, "called");
 
-    *out_region_code = static_cast<SystemRegionCode>(osSettings.region_index.GetValue());
+    *out_region_code = static_cast<SystemRegionCode>(osSettings.region_index);
     R_SUCCEED();
 }
 
@@ -190,12 +191,12 @@ Result ISettingsServer::GetKeyCodeMap(OutLargeData<KeyCodeMap, BufferAttr_HipcMa
 
     R_UNLESS(out_key_code_map != nullptr, ResultNullPointer);
 
-    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index.GetValue())];
+    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index)];
     const auto key_code = std::find_if(language_to_layout.cbegin(), language_to_layout.cend(), [=](const auto & element) { return element.first == language_code; });
 
     if (key_code == language_to_layout.cend())
     {
-        LOG_ERROR(Service_SET, "Could not find keyboard layout for language index {}, defaulting to English us", osSettings.language_index.GetValue());
+        LOG_ERROR(Service_SET, "Could not find keyboard layout for language index {}, defaulting to English us", osSettings.language_index);
         *out_key_code_map = KeyCodeMapEnglishUsInternational;
         R_SUCCEED();
     }
@@ -217,12 +218,12 @@ Result ISettingsServer::GetKeyCodeMap2(OutLargeData<KeyCodeMap, BufferAttr_HipcM
 
     R_UNLESS(out_key_code_map != nullptr, ResultNullPointer);
 
-    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index.GetValue())];
+    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index)];
     const auto key_code = std::find_if(language_to_layout.cbegin(), language_to_layout.cend(), [=](const auto & element) { return element.first == language_code; });
 
     if (key_code == language_to_layout.cend())
     {
-        LOG_ERROR(Service_SET, "Could not find keyboard layout for language index {}, defaulting to English us", osSettings.language_index.GetValue());
+        LOG_ERROR(Service_SET, "Could not find keyboard layout for language index {}, defaulting to English us", osSettings.language_index);
         *out_key_code_map = KeyCodeMapEnglishUsInternational;
         R_SUCCEED();
     }
@@ -234,10 +235,10 @@ Result ISettingsServer::GetDeviceNickName( OutLargeData<std::array<u8, 0x80>, Bu
 {
     LOG_DEBUG(Service_SET, "called");
 
-    const std::size_t string_size = std::min(osSettings.device_name.GetValue().size(), out_device_name->size());
+    const std::size_t string_size = std::min(osSettings.device_name.size(), out_device_name->size());
 
     *out_device_name = {};
-    memcpy(out_device_name->data(), osSettings.device_name.GetValue().data(), string_size);
+    memcpy(out_device_name->data(), osSettings.device_name.data(), string_size);
     R_SUCCEED();
 }
 

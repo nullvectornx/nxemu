@@ -56,7 +56,7 @@ SystemSettings DefaultSystemSettings()
     settings.bluetooth_enable_flag = true;
     settings.wireless_lan_enable_flag = true;
 
-    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index.GetValue())];
+    const auto language_code = available_language_codes[static_cast<s32>(osSettings.language_index)];
     const auto key_code = std::find_if(language_to_layout.cbegin(), language_to_layout.cend(), [=](const auto & element) { return element.first == language_code; });
 
     settings.keyboard_layout = KeyboardLayout::EnglishUs;

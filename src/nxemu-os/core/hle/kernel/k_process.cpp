@@ -134,7 +134,7 @@ public:
 
 void GenerateRandom(std::span<u64> out_random)
 {
-    std::mt19937 rng(osSettings.rng_seed_enabled ? osSettings.rng_seed.GetValue() : static_cast<u32>(std::time(nullptr)));
+    std::mt19937 rng(osSettings.rng_seed_enabled ? osSettings.rng_seed : static_cast<u32>(std::time(nullptr)));
     std::uniform_int_distribution<u64> distribution;
     std::generate(out_random.begin(), out_random.end(), [&] { return distribution(rng); });
 }

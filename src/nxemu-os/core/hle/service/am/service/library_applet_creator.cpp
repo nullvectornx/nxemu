@@ -21,11 +21,11 @@ namespace
 
 bool ShouldCreateGuestApplet(AppletId applet_id)
 {
-#define X(Name, name)                                                          \
-    if (applet_id == AppletId::Name &&                                         \
-        osSettings.name##_applet_mode.GetValue() != Settings::AppletMode::LLE) \
-    {                                                                          \
-        return false;                                                          \
+#define X(Name, name)                                               \
+    if (applet_id == AppletId::Name &&                              \
+        osSettings.name##_applet_mode != Settings::AppletMode::LLE) \
+    {                                                               \
+        return false;                                               \
     }
 
     X(Cabinet, cabinet)

@@ -23,7 +23,7 @@ Result GetTimeInSeconds(Core::System & system, s64 & out_time_s)
 
     if (osSettings.custom_rtc_enabled)
     {
-        out_time_s += osSettings.custom_rtc_offset.GetValue();
+        out_time_s += osSettings.custom_rtc_offset;
     }
     R_SUCCEED();
 }

@@ -96,7 +96,7 @@ ControllerType EmulatedController::MapNPadToSettingsType(NpadStyleIndex type)
 void EmulatedController::ReloadFromSettings()
 {
     const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
-    const auto & player = osSettings.players.GetValue()[player_index];
+    const auto & player = osSettings.players[player_index];
 
     for (std::size_t index = 0; index < player.buttons.size(); ++index)
     {
@@ -146,7 +146,7 @@ void EmulatedController::ReloadFromSettings()
 void EmulatedController::ReloadColorsFromSettings()
 {
     const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
-    const auto & player = osSettings.players.GetValue()[player_index];
+    const auto & player = osSettings.players[player_index];
 
     // Avoid updating colors if overridden by physical controller
     if (controller.color_values[LeftIndex].body != 0 && controller.color_values[RightIndex].body != 0)
@@ -722,7 +722,7 @@ bool EmulatedController::IsConfiguring() const
 void EmulatedController::SaveCurrentConfig()
 {
     const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
-    auto & player = osSettings.players.GetValue()[player_index];
+    auto & player = osSettings.players[player_index];
     player.connected = is_connected;
     player.controller_type = MapNPadToSettingsType(npad_type);
     for (std::size_t index = 0; index < player.buttons.size(); ++index)
@@ -1486,7 +1486,7 @@ bool EmulatedController::SetVibration(DeviceIndex device_index, const VibrationV
     // Skip duplicated vibrations
     if (last_vibration_value[index] == vibration)
     {
-        return osSettings.vibration_enabled.GetValue();
+        return osSettings.vibration_enabled;
     }
 
     last_vibration_value[index] = vibration;
@@ -1497,7 +1497,7 @@ bool EmulatedController::SetVibration(DeviceIndex device_index, const VibrationV
     }
 
     const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
-    const auto & player = osSettings.players.GetValue()[player_index];
+    const auto & player = osSettings.players[player_index];
     const f32 strength = static_cast<f32>(player.vibration_strength) / 100.0f;
 
     if (!player.vibration_enabled)
@@ -1505,7 +1505,7 @@ bool EmulatedController::SetVibration(DeviceIndex device_index, const VibrationV
         return false;
     }
 
-    if (!osSettings.enable_accurate_vibrations.GetValue())
+    if (!osSettings.enable_accurate_vibrations)
     {
         using std::chrono::duration_cast;
         using std::chrono::milliseconds;
@@ -1551,7 +1551,7 @@ VibrationValue EmulatedController::GetActualVibrationValue(DeviceIndex device_in
 bool EmulatedController::IsVibrationEnabled(std::size_t device_index)
 {
     const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
-    const auto & player = osSettings.players.GetValue()[player_index];
+    const auto & player = osSettings.players[player_index];
 
     if (!is_initialized)
     {

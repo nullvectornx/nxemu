@@ -1,481 +1,494 @@
 #include "os_settings.h"
 #include "os_settings_identifiers.h"
+#include <algorithm>
+#include <climits>
 #include <common/json_util.h>
-#include <common/std_string.h>
+#include <cstring>
 #include <nxemu-module-spec/base.h>
+#include <vector>
 #include <yuzu_common/settings_enums.h>
-#include <yuzu_common/settings.h>
 #include <yuzu_common/yuzu_assert.h>
 
 extern IModuleSettings * g_settings;
 
-OSSettings osSettings = {};
+OSSettings osSettings{};
 
 namespace
 {
-    enum class SettingType
+enum class SettingType
+{
+    Boolean,
+    IntValue,
+    IntValueRanged,
+    S32,
+    S64Ranged,
+    U32,
+    Float,
+    String,
+    ControllerType,
+    AudioEngine,
+    AudioMode,
+    Language,
+    DockedMode,
+};
+
+enum class RangedWidth
+{
+    None,
+    U8,
+    U16,
+};
+
+class OsSetting
+{
+public:
+    OsSetting(const char * id, const char * path, bool * val, bool defaultValue);
+    OsSetting(const char * id, const char * path, float * val, float defaultValue);
+    OsSetting(const char * id, const char * path, std::string * val, const char * defaultValue);
+    OsSetting(const char * id, const char * path, ControllerType * val, ControllerType defaultValue);
+    OsSetting(const char * id, const char * path, Settings::AudioEngine * val, Settings::AudioEngine defaultValue);
+    OsSetting(const char * id, const char * path, Settings::AudioMode * val, Settings::AudioMode defaultValue);
+    OsSetting(const char * id, const char * path, Settings::Language * val, Settings::Language defaultValue);
+    OsSetting(const char * id, const char * path, Settings::DockedMode * val, Settings::DockedMode defaultValue);
+    OsSetting(const char * id, const char * path, u8 * val, int32_t defaultValue, int32_t minValue, int32_t maxValue);
+    OsSetting(const char * id, const char * path, u16 * val, int32_t defaultValue, int32_t minValue, int32_t maxValue);
+    OsSetting(const char * id, const char * path, s32 * val, s32 defaultValue);
+    OsSetting(const char * id, const char * path, u32 * val, u32 defaultValue);
+    OsSetting(const char * id, const char * path, s64 * val, s64 defaultValue, s64 minValue, s64 maxValue);
+
+    const char * identifier;
+    const char * json_path;
+    SettingType settingType;
+    RangedWidth rangedWidth{RangedWidth::None};
+    int32_t minValue{};
+    int32_t maxValue{};
+    s64 minValueS64{};
+    s64 maxValueS64{};
+    union
     {
-        StringSetting,
-        StringValue,
-        AudioEngine,
-        AudioMode,
-        Language,
-        DockedMode,
-        U8,
-        U16,
-        BooleanSwitchable,
-        BooleanSetting,
-        BooleanValue,
-        UnsignedInt,
-        Float,
-        ControllerType,
-        S32Setting,
-        U32Switchable,
-        S64Switchable
-    };
-
-    class OsSetting
+        bool boolValue;
+        int32_t intValue;
+        s32 s32Value;
+        u32 u32Value;
+        s64 s64Value;
+        float floatValue;
+        const char * stringValue;
+        ControllerType controllerType;
+        Settings::AudioEngine audioEngine;
+        Settings::AudioMode audioMode;
+        Settings::Language language;
+        Settings::DockedMode dockedMode;
+    } defaults;
+    union
     {
-    public:
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<std::string> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::AudioEngine> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::AudioMode, true>* val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::Language, true> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::DockedMode> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u8, true> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u16, true> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<bool> * val);
-        OsSetting(const char * id, const char * path, Settings::Setting<bool, false> * val);        
-        OsSetting(const char * id, const char * path, bool * val, bool defaultValue);
-        OsSetting(const char * id, const char * path, int * val, int defaultValue);
-        OsSetting(const char * id, const char * path, float * val, float defaultValue);
-        OsSetting(const char * id, const char * path, uint32_t * val, uint32_t defaultValue);
-        OsSetting(const char * id, const char * path, std::string * val, const char * defaultValue);
-        OsSetting(const char * id, const char * path, ControllerType * val, ControllerType defaultValue);
-        OsSetting(const char * id, const char * path, Settings::Setting<s32> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u32> * val);
-        OsSetting(const char * id, const char * path, Settings::SwitchableSetting<s64, true> * val);
+        bool * boolValue;
+        int32_t * intValue;
+        u8 * u8Value;
+        u16 * u16Value;
+        s32 * s32Value;
+        u32 * u32Value;
+        s64 * s64Value;
+        float * floatValue;
+        std::string * stringValue;
+        ControllerType * controllerType;
+        Settings::AudioEngine * audioEngine;
+        Settings::AudioMode * audioMode;
+        Settings::Language * language;
+        Settings::DockedMode * dockedMode;
+    } value;
+};
 
-        const char * identifier;
-        const char * json_path;
-        SettingType settingType;
-        union
-        {
-            Settings::SwitchableSetting<std::string> * stringSetting;
-            Settings::SwitchableSetting<Settings::AudioEngine> * audioEngine;
-            Settings::SwitchableSetting<Settings::AudioMode, true> * audioMode;
-            Settings::SwitchableSetting<Settings::Language, true> * languageIndex;
-            Settings::SwitchableSetting<Settings::DockedMode> * dockedMode;
-            Settings::SwitchableSetting<u8, true> * u8;
-            Settings::SwitchableSetting<u16, true> * u16;
-            Settings::SwitchableSetting<bool> * booleanSwitchable;
-            Settings::Setting<bool, false> * booleanSetting;
-            bool * boolValue;
-            uint32_t * uint32Value;
-            float * floatValue;
-            std::string * stringValue;
-            ControllerType * controllerType;
-            Settings::Setting<s32> * s32Setting;
-            Settings::SwitchableSetting<u32> * u32Switchable;
-            Settings::SwitchableSetting<s64, true> * s64Switchable;
-        } setting;
-        union
-        {
-            bool boolValue;
-            uint32_t uint32Value;
-            float floatValue;
-            const char * sringValue;
-            ControllerType controllerType;
-        } defaultValue;
-    };
+static OsSetting settings[] = {
+        { nullptr, "controller\\player_0\\Connected", &osSettings.players[0].connected, true },
+        { nullptr, "controller\\player_0\\ControllerType", &osSettings.players[0].controller_type, ControllerType::ProController },
+        { nullptr, "controller\\player_0\\Button\\A", &osSettings.players[0].buttons[(size_t)NativeButtonValues::A], "engine:keyboard,code:67,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\B", &osSettings.players[0].buttons[(size_t)NativeButtonValues::B], "engine:keyboard,code:88,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\X", &osSettings.players[0].buttons[(size_t)NativeButtonValues::X], "engine:keyboard,code:86,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\Y", &osSettings.players[0].buttons[(size_t)NativeButtonValues::Y], "engine:keyboard,code:90,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\LStick", &osSettings.players[0].buttons[(size_t)NativeButtonValues::LStick], "engine:keyboard,code:70,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\RStick", &osSettings.players[0].buttons[(size_t)NativeButtonValues::RStick], "engine:keyboard,code:71,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\L", &osSettings.players[0].buttons[(size_t)NativeButtonValues::L], "engine:keyboard,code:81,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\R", &osSettings.players[0].buttons[(size_t)NativeButtonValues::R], "engine:keyboard,code:69,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\ZL", &osSettings.players[0].buttons[(size_t)NativeButtonValues::ZL], "engine:keyboard,code:82,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\ZR", &osSettings.players[0].buttons[(size_t)NativeButtonValues::ZR], "engine:keyboard,code:84,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\Plus", &osSettings.players[0].buttons[(size_t)NativeButtonValues::Plus], "engine:keyboard,code:77,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\Minus", &osSettings.players[0].buttons[(size_t)NativeButtonValues::Minus], "engine:keyboard,code:78,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\DLeft", &osSettings.players[0].buttons[(size_t)NativeButtonValues::DLeft], "engine:keyboard,code:37,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\DUp", &osSettings.players[0].buttons[(size_t)NativeButtonValues::DUp], "engine:keyboard,code:38,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\DRight", &osSettings.players[0].buttons[(size_t)NativeButtonValues::DRight], "engine:keyboard,code:39,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\DDown", &osSettings.players[0].buttons[(size_t)NativeButtonValues::DDown], "engine:keyboard,code:40,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\SLLeft", &osSettings.players[0].buttons[(size_t)NativeButtonValues::SLLeft], "engine:keyboard,code:81,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\SRLeft", &osSettings.players[0].buttons[(size_t)NativeButtonValues::SRLeft], "engine:keyboard,code:69,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\Home", &osSettings.players[0].buttons[(size_t)NativeButtonValues::Home], "engine:keyboard,code:0,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\Screenshot", &osSettings.players[0].buttons[(size_t)NativeButtonValues::Screenshot], "engine:keyboard,code:0,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\SLRight", &osSettings.players[0].buttons[(size_t)NativeButtonValues::SLRight], "engine:keyboard,code:81,toggle:0" },
+        { nullptr, "controller\\player_0\\Button\\SRRight", &osSettings.players[0].buttons[(size_t)NativeButtonValues::SRRight], "engine:keyboard,code:69,toggle:0" },
+        { nullptr, "controller\\player_0\\Analog\\LStick", &osSettings.players[0].analogs[(size_t)NativeAnalogValues::LStick], "engine:analog_from_button,up:engine$0keyboard$1code$087$1toggle$00,left:engine$0keyboard$1code$065$1toggle$00,modifier:engine$0keyboard$1code$016$1toggle$00,down:engine$0keyboard$1code$083$1toggle$00,right:engine$0keyboard$1code$068$1toggle$00" },
+        { nullptr, "controller\\player_0\\Analog\\RStick", &osSettings.players[0].analogs[(size_t)NativeAnalogValues::RStick], "engine:analog_from_button,up:engine$0keyboard$1code$073$1toggle$00,left:engine$0keyboard$1code$074$1toggle$00,modifier:engine$0keyboard$1code$00$1toggle$00,down:engine$0keyboard$1code$075$1toggle$00,right:engine$0keyboard$1code$076$1toggle$00" },
+        { nullptr, "controller\\player_0\\Motion\\Left", &osSettings.players[0].motions[(size_t)NativeMotionValues::MotionLeft], "engine:keyboard,code:55,toggle:0" },
+        { nullptr, "controller\\player_0\\Motion\\Right", &osSettings.players[0].motions[(size_t)NativeMotionValues::MotionRight], "engine:keyboard,code:56,toggle:0" },
+        { nullptr, "controller\\player_0\\Vibration\\Enabled", &osSettings.players[0].vibration_enabled, false },
+        { nullptr, "controller\\player_0\\Vibration\\Strength", &osSettings.players[0].vibration_strength, 0 },
+        { nullptr, "controller\\player_0\\BodyColor\\Left", &osSettings.players[0].body_color_left, 0 },
+        { nullptr, "controller\\player_0\\BodyColor\\Right", &osSettings.players[0].body_color_right, 0 },
+        { nullptr, "controller\\player_0\\ButtonColor\\Left", &osSettings.players[0].button_color_left, 0 },
+        { nullptr, "controller\\player_0\\ButtonColor\\Right", &osSettings.players[0].button_color_right, 0 },
+        { nullptr, "controller\\player_0\\ProfileName", &osSettings.players[0].profile_name, "" },
+        { nullptr, "controller\\player_0\\Vibration\\UseSystem", &osSettings.players[0].use_system_vibrator, false },
 
-    static OsSetting settings[] = {
-        { nullptr, "controller\\player_0\\Connected", &osSettings.players.GetValue(true)[0].connected, true },
-        { nullptr, "controller\\player_0\\ControllerType", &osSettings.players.GetValue(true)[0].controller_type, ControllerType::ProController },
-        { nullptr, "controller\\player_0\\Button\\A", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::A], "engine:keyboard,code:67,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\B", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::B], "engine:keyboard,code:88,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\X", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::X], "engine:keyboard,code:86,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\Y", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::Y], "engine:keyboard,code:90,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\LStick", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::LStick], "engine:keyboard,code:70,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\RStick", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::RStick], "engine:keyboard,code:71,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\L", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::L], "engine:keyboard,code:81,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\R", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::R], "engine:keyboard,code:69,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\ZL", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::ZL], "engine:keyboard,code:82,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\ZR", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::ZR], "engine:keyboard,code:84,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\Plus", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::Plus], "engine:keyboard,code:77,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\Minus", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::Minus], "engine:keyboard,code:78,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\DLeft", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::DLeft], "engine:keyboard,code:37,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\DUp", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::DUp], "engine:keyboard,code:38,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\DRight", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::DRight], "engine:keyboard,code:39,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\DDown", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::DDown], "engine:keyboard,code:40,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\SLLeft", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::SLLeft], "engine:keyboard,code:81,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\SRLeft", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::SRLeft], "engine:keyboard,code:69,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\Home", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::Home], "engine:keyboard,code:0,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\Screenshot", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::Screenshot], "engine:keyboard,code:0,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\SLRight", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::SLRight], "engine:keyboard,code:81,toggle:0" },
-        { nullptr, "controller\\player_0\\Button\\SRRight", &osSettings.players.GetValue(true)[0].buttons[(size_t)NativeButtonValues::SRRight], "engine:keyboard,code:69,toggle:0" },
-        { nullptr, "controller\\player_0\\Analog\\LStick", &osSettings.players.GetValue(true)[0].analogs[(size_t)NativeAnalogValues::LStick], "engine:analog_from_button,up:engine$0keyboard$1code$087$1toggle$00,left:engine$0keyboard$1code$065$1toggle$00,modifier:engine$0keyboard$1code$016$1toggle$00,down:engine$0keyboard$1code$083$1toggle$00,right:engine$0keyboard$1code$068$1toggle$00" },
-        { nullptr, "controller\\player_0\\Analog\\RStick", &osSettings.players.GetValue(true)[0].analogs[(size_t)NativeAnalogValues::RStick], "engine:analog_from_button,up:engine$0keyboard$1code$073$1toggle$00,left:engine$0keyboard$1code$074$1toggle$00,modifier:engine$0keyboard$1code$00$1toggle$00,down:engine$0keyboard$1code$075$1toggle$00,right:engine$0keyboard$1code$076$1toggle$00" },
-        { nullptr, "controller\\player_0\\Motion\\Left", &osSettings.players.GetValue(true)[0].motions[(size_t)NativeMotionValues::MotionLeft], "engine:keyboard,code:55,toggle:0" },
-        { nullptr, "controller\\player_0\\Motion\\Right", &osSettings.players.GetValue(true)[0].motions[(size_t)NativeMotionValues::MotionRight], "engine:keyboard,code:56,toggle:0" },
-        { nullptr, "controller\\player_0\\Vibration\\Enabled", &osSettings.players.GetValue(true)[0].vibration_enabled, false },
-        { nullptr, "controller\\player_0\\Vibration\\Strength", &osSettings.players.GetValue(true)[0].vibration_strength, 0 },
-        { nullptr, "controller\\player_0\\BodyColor\\Left", &osSettings.players.GetValue(true)[0].body_color_left, 0 },
-        { nullptr, "controller\\player_0\\BodyColor\\Right", &osSettings.players.GetValue(true)[0].body_color_right, 0 },
-        { nullptr, "controller\\player_0\\ButtonColor\\Left", &osSettings.players.GetValue(true)[0].button_color_left, 0 },
-        { nullptr, "controller\\player_0\\ButtonColor\\Right", &osSettings.players.GetValue(true)[0].button_color_right, 0 },
-        { nullptr, "controller\\player_0\\ProfileName", &osSettings.players.GetValue(true)[0].profile_name, "" },
-        { nullptr, "controller\\player_0\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[0].use_system_vibrator, false },
+        { nullptr, "controller\\player_1\\Connected", &osSettings.players[1].connected, false },
+        { nullptr, "controller\\player_1\\ControllerType", &osSettings.players[1].controller_type, ControllerType::ProController },
+        { nullptr, "controller\\player_1\\Button\\A", &osSettings.players[1].buttons[(size_t)NativeButtonValues::A], "" },
+        { nullptr, "controller\\player_1\\Button\\B", &osSettings.players[1].buttons[(size_t)NativeButtonValues::B], "" },
+        { nullptr, "controller\\player_1\\Button\\X", &osSettings.players[1].buttons[(size_t)NativeButtonValues::X], "" },
+        { nullptr, "controller\\player_1\\Button\\Y", &osSettings.players[1].buttons[(size_t)NativeButtonValues::Y], "" },
+        { nullptr, "controller\\player_1\\Button\\LStick", &osSettings.players[1].buttons[(size_t)NativeButtonValues::LStick], "" },
+        { nullptr, "controller\\player_1\\Button\\RStick", &osSettings.players[1].buttons[(size_t)NativeButtonValues::RStick], "" },
+        { nullptr, "controller\\player_1\\Button\\L", &osSettings.players[1].buttons[(size_t)NativeButtonValues::L], "" },
+        { nullptr, "controller\\player_1\\Button\\R", &osSettings.players[1].buttons[(size_t)NativeButtonValues::R], "" },
+        { nullptr, "controller\\player_1\\Button\\ZL", &osSettings.players[1].buttons[(size_t)NativeButtonValues::ZL], "" },
+        { nullptr, "controller\\player_1\\Button\\ZR", &osSettings.players[1].buttons[(size_t)NativeButtonValues::ZR], "" },
+        { nullptr, "controller\\player_1\\Button\\Plus", &osSettings.players[1].buttons[(size_t)NativeButtonValues::Plus], "" },
+        { nullptr, "controller\\player_1\\Button\\Minus", &osSettings.players[1].buttons[(size_t)NativeButtonValues::Minus], "" },
+        { nullptr, "controller\\player_1\\Button\\DLeft", &osSettings.players[1].buttons[(size_t)NativeButtonValues::DLeft], "" },
+        { nullptr, "controller\\player_1\\Button\\DUp", &osSettings.players[1].buttons[(size_t)NativeButtonValues::DUp], "" },
+        { nullptr, "controller\\player_1\\Button\\DRight", &osSettings.players[1].buttons[(size_t)NativeButtonValues::DRight], "" },
+        { nullptr, "controller\\player_1\\Button\\DDown", &osSettings.players[1].buttons[(size_t)NativeButtonValues::DDown], "" },
+        { nullptr, "controller\\player_1\\Button\\SLLeft", &osSettings.players[1].buttons[(size_t)NativeButtonValues::SLLeft], "" },
+        { nullptr, "controller\\player_1\\Button\\SRLeft", &osSettings.players[1].buttons[(size_t)NativeButtonValues::SRLeft], "" },
+        { nullptr, "controller\\player_1\\Button\\Home", &osSettings.players[1].buttons[(size_t)NativeButtonValues::Home], "" },
+        { nullptr, "controller\\player_1\\Button\\Screenshot", &osSettings.players[1].buttons[(size_t)NativeButtonValues::Screenshot], "" },
+        { nullptr, "controller\\player_1\\Button\\SLRight", &osSettings.players[1].buttons[(size_t)NativeButtonValues::SLRight], "" },
+        { nullptr, "controller\\player_1\\Button\\SRRight", &osSettings.players[1].buttons[(size_t)NativeButtonValues::SRRight], "" },
+        { nullptr, "controller\\player_1\\Analog\\LStick", &osSettings.players[1].analogs[(size_t)NativeAnalogValues::LStick], "" },
+        { nullptr, "controller\\player_1\\Analog\\RStick", &osSettings.players[1].analogs[(size_t)NativeAnalogValues::RStick], "" },
+        { nullptr, "controller\\player_1\\Motion\\Left", &osSettings.players[1].motions[(size_t)NativeMotionValues::MotionLeft], "" },
+        { nullptr, "controller\\player_1\\Motion\\Right", &osSettings.players[1].motions[(size_t)NativeMotionValues::MotionRight], "" },
+        { nullptr, "controller\\player_1\\Vibration\\Enabled", &osSettings.players[1].vibration_enabled, false },
+        { nullptr, "controller\\player_1\\Vibration\\Strength", &osSettings.players[1].vibration_strength, 0 },
+        { nullptr, "controller\\player_1\\BodyColor\\Left", &osSettings.players[1].body_color_left, 0 },
+        { nullptr, "controller\\player_1\\BodyColor\\Right", &osSettings.players[1].body_color_right, 0 },
+        { nullptr, "controller\\player_1\\ButtonColor\\Left", &osSettings.players[1].button_color_left, 0 },
+        { nullptr, "controller\\player_1\\ButtonColor\\Right", &osSettings.players[1].button_color_right, 0 },
+        { nullptr, "controller\\player_1\\ProfileName", &osSettings.players[1].profile_name, "" },
+        { nullptr, "controller\\player_1\\Vibration\\UseSystem", &osSettings.players[1].use_system_vibrator, false },
 
-        { nullptr, "controller\\player_1\\Connected", &osSettings.players.GetValue(true)[1].connected, false },
-        { nullptr, "controller\\player_1\\ControllerType", &osSettings.players.GetValue(true)[1].controller_type, ControllerType::ProController },
-        { nullptr, "controller\\player_1\\Button\\A", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::A], "" },
-        { nullptr, "controller\\player_1\\Button\\B", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::B], "" },
-        { nullptr, "controller\\player_1\\Button\\X", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::X], "" },
-        { nullptr, "controller\\player_1\\Button\\Y", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::Y], "" },
-        { nullptr, "controller\\player_1\\Button\\LStick", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::LStick], "" },
-        { nullptr, "controller\\player_1\\Button\\RStick", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::RStick], "" },
-        { nullptr, "controller\\player_1\\Button\\L", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::L], "" },
-        { nullptr, "controller\\player_1\\Button\\R", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::R], "" },
-        { nullptr, "controller\\player_1\\Button\\ZL", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::ZL], "" },
-        { nullptr, "controller\\player_1\\Button\\ZR", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::ZR], "" },
-        { nullptr, "controller\\player_1\\Button\\Plus", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::Plus], "" },
-        { nullptr, "controller\\player_1\\Button\\Minus", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::Minus], "" },
-        { nullptr, "controller\\player_1\\Button\\DLeft", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::DLeft], "" },
-        { nullptr, "controller\\player_1\\Button\\DUp", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::DUp], "" },
-        { nullptr, "controller\\player_1\\Button\\DRight", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::DRight], "" },
-        { nullptr, "controller\\player_1\\Button\\DDown", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::DDown], "" },
-        { nullptr, "controller\\player_1\\Button\\SLLeft", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::SLLeft], "" },
-        { nullptr, "controller\\player_1\\Button\\SRLeft", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::SRLeft], "" },
-        { nullptr, "controller\\player_1\\Button\\Home", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::Home], "" },
-        { nullptr, "controller\\player_1\\Button\\Screenshot", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::Screenshot], "" },
-        { nullptr, "controller\\player_1\\Button\\SLRight", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::SLRight], "" },
-        { nullptr, "controller\\player_1\\Button\\SRRight", &osSettings.players.GetValue(true)[1].buttons[(size_t)NativeButtonValues::SRRight], "" },
-        { nullptr, "controller\\player_1\\Analog\\LStick", &osSettings.players.GetValue(true)[1].analogs[(size_t)NativeAnalogValues::LStick], "" },
-        { nullptr, "controller\\player_1\\Analog\\RStick", &osSettings.players.GetValue(true)[1].analogs[(size_t)NativeAnalogValues::RStick], "" },
-        { nullptr, "controller\\player_1\\Motion\\Left", &osSettings.players.GetValue(true)[1].motions[(size_t)NativeMotionValues::MotionLeft], "" },
-        { nullptr, "controller\\player_1\\Motion\\Right", &osSettings.players.GetValue(true)[1].motions[(size_t)NativeMotionValues::MotionRight], "" },
-        { nullptr, "controller\\player_1\\Vibration\\Enabled", &osSettings.players.GetValue(true)[1].vibration_enabled, false },
-        { nullptr, "controller\\player_1\\Vibration\\Strength", &osSettings.players.GetValue(true)[1].vibration_strength, 0 },
-        { nullptr, "controller\\player_1\\BodyColor\\Left", &osSettings.players.GetValue(true)[1].body_color_left, 0 },
-        { nullptr, "controller\\player_1\\BodyColor\\Right", &osSettings.players.GetValue(true)[1].body_color_right, 0 },
-        { nullptr, "controller\\player_1\\ButtonColor\\Left", &osSettings.players.GetValue(true)[1].button_color_left, 0 },
-        { nullptr, "controller\\player_1\\ButtonColor\\Right", &osSettings.players.GetValue(true)[1].button_color_right, 0 },
-        { nullptr, "controller\\player_1\\ProfileName", &osSettings.players.GetValue(true)[1].profile_name, "" },
-        { nullptr, "controller\\player_1\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[1].use_system_vibrator, false },
+        {nullptr, "controller\\player_2\\Connected", &osSettings.players[2].connected, false},
+        {nullptr, "controller\\player_2\\ControllerType", &osSettings.players[2].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_2\\Button\\A", &osSettings.players[2].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_2\\Button\\B", &osSettings.players[2].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_2\\Button\\X", &osSettings.players[2].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_2\\Button\\Y", &osSettings.players[2].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_2\\Button\\LStick", &osSettings.players[2].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_2\\Button\\RStick", &osSettings.players[2].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_2\\Button\\L", &osSettings.players[2].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_2\\Button\\R", &osSettings.players[2].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_2\\Button\\ZL", &osSettings.players[2].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_2\\Button\\ZR", &osSettings.players[2].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_2\\Button\\Plus", &osSettings.players[2].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_2\\Button\\Minus", &osSettings.players[2].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_2\\Button\\DLeft", &osSettings.players[2].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_2\\Button\\DUp", &osSettings.players[2].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_2\\Button\\DRight", &osSettings.players[2].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_2\\Button\\DDown", &osSettings.players[2].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_2\\Button\\SLLeft", &osSettings.players[2].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_2\\Button\\SRLeft", &osSettings.players[2].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_2\\Button\\Home", &osSettings.players[2].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_2\\Button\\Screenshot", &osSettings.players[2].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_2\\Button\\SLRight", &osSettings.players[2].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_2\\Button\\SRRight", &osSettings.players[2].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_2\\Analog\\LStick", &osSettings.players[2].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_2\\Analog\\RStick", &osSettings.players[2].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_2\\Motion\\Left", &osSettings.players[2].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_2\\Motion\\Right", &osSettings.players[2].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_2\\Vibration\\Enabled", &osSettings.players[2].vibration_enabled, false},
+        {nullptr, "controller\\player_2\\Vibration\\Strength", &osSettings.players[2].vibration_strength, 0},
+        {nullptr, "controller\\player_2\\BodyColor\\Left", &osSettings.players[2].body_color_left, 0},
+        {nullptr, "controller\\player_2\\BodyColor\\Right", &osSettings.players[2].body_color_right, 0},
+        {nullptr, "controller\\player_2\\ButtonColor\\Left", &osSettings.players[2].button_color_left, 0},
+        {nullptr, "controller\\player_2\\ButtonColor\\Right", &osSettings.players[2].button_color_right, 0},
+        {nullptr, "controller\\player_2\\ProfileName", &osSettings.players[2].profile_name, ""},
+        {nullptr, "controller\\player_2\\Vibration\\UseSystem", &osSettings.players[2].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_2\\Connected", &osSettings.players.GetValue(true)[2].connected, false},
-        {nullptr, "controller\\player_2\\ControllerType", &osSettings.players.GetValue(true)[2].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_2\\Button\\A", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_2\\Button\\B", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_2\\Button\\X", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_2\\Button\\Y", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_2\\Button\\LStick", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_2\\Button\\RStick", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_2\\Button\\L", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_2\\Button\\R", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_2\\Button\\ZL", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_2\\Button\\ZR", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_2\\Button\\Plus", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_2\\Button\\Minus", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_2\\Button\\DLeft", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_2\\Button\\DUp", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_2\\Button\\DRight", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_2\\Button\\DDown", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_2\\Button\\SLLeft", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_2\\Button\\SRLeft", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_2\\Button\\Home", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_2\\Button\\Screenshot", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_2\\Button\\SLRight", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_2\\Button\\SRRight", &osSettings.players.GetValue(true)[2].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_2\\Analog\\LStick", &osSettings.players.GetValue(true)[2].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_2\\Analog\\RStick", &osSettings.players.GetValue(true)[2].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_2\\Motion\\Left", &osSettings.players.GetValue(true)[2].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_2\\Motion\\Right", &osSettings.players.GetValue(true)[2].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_2\\Vibration\\Enabled", &osSettings.players.GetValue(true)[2].vibration_enabled, false},
-        {nullptr, "controller\\player_2\\Vibration\\Strength", &osSettings.players.GetValue(true)[2].vibration_strength, 0},
-        {nullptr, "controller\\player_2\\BodyColor\\Left", &osSettings.players.GetValue(true)[2].body_color_left, 0},
-        {nullptr, "controller\\player_2\\BodyColor\\Right", &osSettings.players.GetValue(true)[2].body_color_right, 0},
-        {nullptr, "controller\\player_2\\ButtonColor\\Left", &osSettings.players.GetValue(true)[2].button_color_left, 0},
-        {nullptr, "controller\\player_2\\ButtonColor\\Right", &osSettings.players.GetValue(true)[2].button_color_right, 0},
-        {nullptr, "controller\\player_2\\ProfileName", &osSettings.players.GetValue(true)[2].profile_name, ""},
-        {nullptr, "controller\\player_2\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[2].use_system_vibrator, false},
+        {nullptr, "controller\\player_3\\Connected", &osSettings.players[3].connected, false},
+        {nullptr, "controller\\player_3\\ControllerType", &osSettings.players[3].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_3\\Button\\A", &osSettings.players[3].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_3\\Button\\B", &osSettings.players[3].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_3\\Button\\X", &osSettings.players[3].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_3\\Button\\Y", &osSettings.players[3].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_3\\Button\\LStick", &osSettings.players[3].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_3\\Button\\RStick", &osSettings.players[3].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_3\\Button\\L", &osSettings.players[3].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_3\\Button\\R", &osSettings.players[3].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_3\\Button\\ZL", &osSettings.players[3].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_3\\Button\\ZR", &osSettings.players[3].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_3\\Button\\Plus", &osSettings.players[3].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_3\\Button\\Minus", &osSettings.players[3].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_3\\Button\\DLeft", &osSettings.players[3].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_3\\Button\\DUp", &osSettings.players[3].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_3\\Button\\DRight", &osSettings.players[3].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_3\\Button\\DDown", &osSettings.players[3].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_3\\Button\\SLLeft", &osSettings.players[3].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_3\\Button\\SRLeft", &osSettings.players[3].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_3\\Button\\Home", &osSettings.players[3].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_3\\Button\\Screenshot", &osSettings.players[3].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_3\\Button\\SLRight", &osSettings.players[3].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_3\\Button\\SRRight", &osSettings.players[3].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_3\\Analog\\LStick", &osSettings.players[3].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_3\\Analog\\RStick", &osSettings.players[3].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_3\\Motion\\Left", &osSettings.players[3].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_3\\Motion\\Right", &osSettings.players[3].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_3\\Vibration\\Enabled", &osSettings.players[3].vibration_enabled, false},
+        {nullptr, "controller\\player_3\\Vibration\\Strength", &osSettings.players[3].vibration_strength, 0},
+        {nullptr, "controller\\player_3\\BodyColor\\Left", &osSettings.players[3].body_color_left, 0},
+        {nullptr, "controller\\player_3\\BodyColor\\Right", &osSettings.players[3].body_color_right, 0},
+        {nullptr, "controller\\player_3\\ButtonColor\\Left", &osSettings.players[3].button_color_left, 0},
+        {nullptr, "controller\\player_3\\ButtonColor\\Right", &osSettings.players[3].button_color_right, 0},
+        {nullptr, "controller\\player_3\\ProfileName", &osSettings.players[3].profile_name, ""},
+        {nullptr, "controller\\player_3\\Vibration\\UseSystem", &osSettings.players[3].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_3\\Connected", &osSettings.players.GetValue(true)[3].connected, false},
-        {nullptr, "controller\\player_3\\ControllerType", &osSettings.players.GetValue(true)[3].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_3\\Button\\A", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_3\\Button\\B", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_3\\Button\\X", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_3\\Button\\Y", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_3\\Button\\LStick", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_3\\Button\\RStick", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_3\\Button\\L", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_3\\Button\\R", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_3\\Button\\ZL", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_3\\Button\\ZR", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_3\\Button\\Plus", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_3\\Button\\Minus", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_3\\Button\\DLeft", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_3\\Button\\DUp", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_3\\Button\\DRight", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_3\\Button\\DDown", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_3\\Button\\SLLeft", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_3\\Button\\SRLeft", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_3\\Button\\Home", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_3\\Button\\Screenshot", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_3\\Button\\SLRight", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_3\\Button\\SRRight", &osSettings.players.GetValue(true)[3].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_3\\Analog\\LStick", &osSettings.players.GetValue(true)[3].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_3\\Analog\\RStick", &osSettings.players.GetValue(true)[3].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_3\\Motion\\Left", &osSettings.players.GetValue(true)[3].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_3\\Motion\\Right", &osSettings.players.GetValue(true)[3].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_3\\Vibration\\Enabled", &osSettings.players.GetValue(true)[3].vibration_enabled, false},
-        {nullptr, "controller\\player_3\\Vibration\\Strength", &osSettings.players.GetValue(true)[3].vibration_strength, 0},
-        {nullptr, "controller\\player_3\\BodyColor\\Left", &osSettings.players.GetValue(true)[3].body_color_left, 0},
-        {nullptr, "controller\\player_3\\BodyColor\\Right", &osSettings.players.GetValue(true)[3].body_color_right, 0},
-        {nullptr, "controller\\player_3\\ButtonColor\\Left", &osSettings.players.GetValue(true)[3].button_color_left, 0},
-        {nullptr, "controller\\player_3\\ButtonColor\\Right", &osSettings.players.GetValue(true)[3].button_color_right, 0},
-        {nullptr, "controller\\player_3\\ProfileName", &osSettings.players.GetValue(true)[3].profile_name, ""},
-        {nullptr, "controller\\player_3\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[3].use_system_vibrator, false},
+        {nullptr, "controller\\player_4\\Connected", &osSettings.players[4].connected, false},
+        {nullptr, "controller\\player_4\\ControllerType", &osSettings.players[4].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_4\\Button\\A", &osSettings.players[4].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_4\\Button\\B", &osSettings.players[4].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_4\\Button\\X", &osSettings.players[4].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_4\\Button\\Y", &osSettings.players[4].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_4\\Button\\LStick", &osSettings.players[4].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_4\\Button\\RStick", &osSettings.players[4].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_4\\Button\\L", &osSettings.players[4].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_4\\Button\\R", &osSettings.players[4].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_4\\Button\\ZL", &osSettings.players[4].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_4\\Button\\ZR", &osSettings.players[4].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_4\\Button\\Plus", &osSettings.players[4].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_4\\Button\\Minus", &osSettings.players[4].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_4\\Button\\DLeft", &osSettings.players[4].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_4\\Button\\DUp", &osSettings.players[4].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_4\\Button\\DRight", &osSettings.players[4].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_4\\Button\\DDown", &osSettings.players[4].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_4\\Button\\SLLeft", &osSettings.players[4].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_4\\Button\\SRLeft", &osSettings.players[4].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_4\\Button\\Home", &osSettings.players[4].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_4\\Button\\Screenshot", &osSettings.players[4].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_4\\Button\\SLRight", &osSettings.players[4].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_4\\Button\\SRRight", &osSettings.players[4].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_4\\Analog\\LStick", &osSettings.players[4].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_4\\Analog\\RStick", &osSettings.players[4].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_4\\Motion\\Left", &osSettings.players[4].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_4\\Motion\\Right", &osSettings.players[4].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_4\\Vibration\\Enabled", &osSettings.players[4].vibration_enabled, false},
+        {nullptr, "controller\\player_4\\Vibration\\Strength", &osSettings.players[4].vibration_strength, 0},
+        {nullptr, "controller\\player_4\\BodyColor\\Left", &osSettings.players[4].body_color_left, 0},
+        {nullptr, "controller\\player_4\\BodyColor\\Right", &osSettings.players[4].body_color_right, 0},
+        {nullptr, "controller\\player_4\\ButtonColor\\Left", &osSettings.players[4].button_color_left, 0},
+        {nullptr, "controller\\player_4\\ButtonColor\\Right", &osSettings.players[4].button_color_right, 0},
+        {nullptr, "controller\\player_4\\ProfileName", &osSettings.players[4].profile_name, ""},
+        {nullptr, "controller\\player_4\\Vibration\\UseSystem", &osSettings.players[4].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_4\\Connected", &osSettings.players.GetValue(true)[4].connected, false},
-        {nullptr, "controller\\player_4\\ControllerType", &osSettings.players.GetValue(true)[4].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_4\\Button\\A", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_4\\Button\\B", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_4\\Button\\X", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_4\\Button\\Y", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_4\\Button\\LStick", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_4\\Button\\RStick", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_4\\Button\\L", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_4\\Button\\R", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_4\\Button\\ZL", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_4\\Button\\ZR", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_4\\Button\\Plus", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_4\\Button\\Minus", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_4\\Button\\DLeft", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_4\\Button\\DUp", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_4\\Button\\DRight", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_4\\Button\\DDown", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_4\\Button\\SLLeft", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_4\\Button\\SRLeft", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_4\\Button\\Home", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_4\\Button\\Screenshot", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_4\\Button\\SLRight", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_4\\Button\\SRRight", &osSettings.players.GetValue(true)[4].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_4\\Analog\\LStick", &osSettings.players.GetValue(true)[4].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_4\\Analog\\RStick", &osSettings.players.GetValue(true)[4].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_4\\Motion\\Left", &osSettings.players.GetValue(true)[4].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_4\\Motion\\Right", &osSettings.players.GetValue(true)[4].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_4\\Vibration\\Enabled", &osSettings.players.GetValue(true)[4].vibration_enabled, false},
-        {nullptr, "controller\\player_4\\Vibration\\Strength", &osSettings.players.GetValue(true)[4].vibration_strength, 0},
-        {nullptr, "controller\\player_4\\BodyColor\\Left", &osSettings.players.GetValue(true)[4].body_color_left, 0},
-        {nullptr, "controller\\player_4\\BodyColor\\Right", &osSettings.players.GetValue(true)[4].body_color_right, 0},
-        {nullptr, "controller\\player_4\\ButtonColor\\Left", &osSettings.players.GetValue(true)[4].button_color_left, 0},
-        {nullptr, "controller\\player_4\\ButtonColor\\Right", &osSettings.players.GetValue(true)[4].button_color_right, 0},
-        {nullptr, "controller\\player_4\\ProfileName", &osSettings.players.GetValue(true)[4].profile_name, ""},
-        {nullptr, "controller\\player_4\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[4].use_system_vibrator, false},
+        {nullptr, "controller\\player_5\\Connected", &osSettings.players[5].connected, false},
+        {nullptr, "controller\\player_5\\ControllerType", &osSettings.players[5].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_5\\Button\\A", &osSettings.players[5].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_5\\Button\\B", &osSettings.players[5].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_5\\Button\\X", &osSettings.players[5].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_5\\Button\\Y", &osSettings.players[5].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_5\\Button\\LStick", &osSettings.players[5].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_5\\Button\\RStick", &osSettings.players[5].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_5\\Button\\L", &osSettings.players[5].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_5\\Button\\R", &osSettings.players[5].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_5\\Button\\ZL", &osSettings.players[5].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_5\\Button\\ZR", &osSettings.players[5].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_5\\Button\\Plus", &osSettings.players[5].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_5\\Button\\Minus", &osSettings.players[5].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_5\\Button\\DLeft", &osSettings.players[5].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_5\\Button\\DUp", &osSettings.players[5].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_5\\Button\\DRight", &osSettings.players[5].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_5\\Button\\DDown", &osSettings.players[5].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_5\\Button\\SLLeft", &osSettings.players[5].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_5\\Button\\SRLeft", &osSettings.players[5].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_5\\Button\\Home", &osSettings.players[5].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_5\\Button\\Screenshot", &osSettings.players[5].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_5\\Button\\SLRight", &osSettings.players[5].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_5\\Button\\SRRight", &osSettings.players[5].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_5\\Analog\\LStick", &osSettings.players[5].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_5\\Analog\\RStick", &osSettings.players[5].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_5\\Motion\\Left", &osSettings.players[5].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_5\\Motion\\Right", &osSettings.players[5].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_5\\Vibration\\Enabled", &osSettings.players[5].vibration_enabled, false},
+        {nullptr, "controller\\player_5\\Vibration\\Strength", &osSettings.players[5].vibration_strength, 0},
+        {nullptr, "controller\\player_5\\BodyColor\\Left", &osSettings.players[5].body_color_left, 0},
+        {nullptr, "controller\\player_5\\BodyColor\\Right", &osSettings.players[5].body_color_right, 0},
+        {nullptr, "controller\\player_5\\ButtonColor\\Left", &osSettings.players[5].button_color_left, 0},
+        {nullptr, "controller\\player_5\\ButtonColor\\Right", &osSettings.players[5].button_color_right, 0},
+        {nullptr, "controller\\player_5\\ProfileName", &osSettings.players[5].profile_name, ""},
+        {nullptr, "controller\\player_5\\Vibration\\UseSystem", &osSettings.players[5].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_5\\Connected", &osSettings.players.GetValue(true)[5].connected, false},
-        {nullptr, "controller\\player_5\\ControllerType", &osSettings.players.GetValue(true)[5].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_5\\Button\\A", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_5\\Button\\B", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_5\\Button\\X", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_5\\Button\\Y", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_5\\Button\\LStick", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_5\\Button\\RStick", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_5\\Button\\L", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_5\\Button\\R", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_5\\Button\\ZL", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_5\\Button\\ZR", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_5\\Button\\Plus", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_5\\Button\\Minus", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_5\\Button\\DLeft", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_5\\Button\\DUp", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_5\\Button\\DRight", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_5\\Button\\DDown", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_5\\Button\\SLLeft", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_5\\Button\\SRLeft", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_5\\Button\\Home", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_5\\Button\\Screenshot", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_5\\Button\\SLRight", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_5\\Button\\SRRight", &osSettings.players.GetValue(true)[5].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_5\\Analog\\LStick", &osSettings.players.GetValue(true)[5].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_5\\Analog\\RStick", &osSettings.players.GetValue(true)[5].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_5\\Motion\\Left", &osSettings.players.GetValue(true)[5].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_5\\Motion\\Right", &osSettings.players.GetValue(true)[5].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_5\\Vibration\\Enabled", &osSettings.players.GetValue(true)[5].vibration_enabled, false},
-        {nullptr, "controller\\player_5\\Vibration\\Strength", &osSettings.players.GetValue(true)[5].vibration_strength, 0},
-        {nullptr, "controller\\player_5\\BodyColor\\Left", &osSettings.players.GetValue(true)[5].body_color_left, 0},
-        {nullptr, "controller\\player_5\\BodyColor\\Right", &osSettings.players.GetValue(true)[5].body_color_right, 0},
-        {nullptr, "controller\\player_5\\ButtonColor\\Left", &osSettings.players.GetValue(true)[5].button_color_left, 0},
-        {nullptr, "controller\\player_5\\ButtonColor\\Right", &osSettings.players.GetValue(true)[5].button_color_right, 0},
-        {nullptr, "controller\\player_5\\ProfileName", &osSettings.players.GetValue(true)[5].profile_name, ""},
-        {nullptr, "controller\\player_5\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[5].use_system_vibrator, false},
+        {nullptr, "controller\\player_6\\Connected", &osSettings.players[6].connected, false},
+        {nullptr, "controller\\player_6\\ControllerType", &osSettings.players[6].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_6\\Button\\A", &osSettings.players[6].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_6\\Button\\B", &osSettings.players[6].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_6\\Button\\X", &osSettings.players[6].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_6\\Button\\Y", &osSettings.players[6].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_6\\Button\\LStick", &osSettings.players[6].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_6\\Button\\RStick", &osSettings.players[6].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_6\\Button\\L", &osSettings.players[6].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_6\\Button\\R", &osSettings.players[6].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_6\\Button\\ZL", &osSettings.players[6].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_6\\Button\\ZR", &osSettings.players[6].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_6\\Button\\Plus", &osSettings.players[6].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_6\\Button\\Minus", &osSettings.players[6].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_6\\Button\\DLeft", &osSettings.players[6].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_6\\Button\\DUp", &osSettings.players[6].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_6\\Button\\DRight", &osSettings.players[6].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_6\\Button\\DDown", &osSettings.players[6].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_6\\Button\\SLLeft", &osSettings.players[6].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_6\\Button\\SRLeft", &osSettings.players[6].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_6\\Button\\Home", &osSettings.players[6].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_6\\Button\\Screenshot", &osSettings.players[6].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_6\\Button\\SLRight", &osSettings.players[6].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_6\\Button\\SRRight", &osSettings.players[6].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_6\\Analog\\LStick", &osSettings.players[6].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_6\\Analog\\RStick", &osSettings.players[6].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_6\\Motion\\Left", &osSettings.players[6].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_6\\Motion\\Right", &osSettings.players[6].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_6\\Vibration\\Enabled", &osSettings.players[6].vibration_enabled, false},
+        {nullptr, "controller\\player_6\\Vibration\\Strength", &osSettings.players[6].vibration_strength, 0},
+        {nullptr, "controller\\player_6\\BodyColor\\Left", &osSettings.players[6].body_color_left, 0},
+        {nullptr, "controller\\player_6\\BodyColor\\Right", &osSettings.players[6].body_color_right, 0},
+        {nullptr, "controller\\player_6\\ButtonColor\\Left", &osSettings.players[6].button_color_left, 0},
+        {nullptr, "controller\\player_6\\ButtonColor\\Right", &osSettings.players[6].button_color_right, 0},
+        {nullptr, "controller\\player_6\\ProfileName", &osSettings.players[6].profile_name, ""},
+        {nullptr, "controller\\player_6\\Vibration\\UseSystem", &osSettings.players[6].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_6\\Connected", &osSettings.players.GetValue(true)[6].connected, false},
-        {nullptr, "controller\\player_6\\ControllerType", &osSettings.players.GetValue(true)[6].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_6\\Button\\A", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_6\\Button\\B", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_6\\Button\\X", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_6\\Button\\Y", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_6\\Button\\LStick", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_6\\Button\\RStick", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_6\\Button\\L", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_6\\Button\\R", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_6\\Button\\ZL", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_6\\Button\\ZR", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_6\\Button\\Plus", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_6\\Button\\Minus", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_6\\Button\\DLeft", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_6\\Button\\DUp", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_6\\Button\\DRight", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_6\\Button\\DDown", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_6\\Button\\SLLeft", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_6\\Button\\SRLeft", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_6\\Button\\Home", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_6\\Button\\Screenshot", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_6\\Button\\SLRight", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_6\\Button\\SRRight", &osSettings.players.GetValue(true)[6].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_6\\Analog\\LStick", &osSettings.players.GetValue(true)[6].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_6\\Analog\\RStick", &osSettings.players.GetValue(true)[6].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_6\\Motion\\Left", &osSettings.players.GetValue(true)[6].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_6\\Motion\\Right", &osSettings.players.GetValue(true)[6].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_6\\Vibration\\Enabled", &osSettings.players.GetValue(true)[6].vibration_enabled, false},
-        {nullptr, "controller\\player_6\\Vibration\\Strength", &osSettings.players.GetValue(true)[6].vibration_strength, 0},
-        {nullptr, "controller\\player_6\\BodyColor\\Left", &osSettings.players.GetValue(true)[6].body_color_left, 0},
-        {nullptr, "controller\\player_6\\BodyColor\\Right", &osSettings.players.GetValue(true)[6].body_color_right, 0},
-        {nullptr, "controller\\player_6\\ButtonColor\\Left", &osSettings.players.GetValue(true)[6].button_color_left, 0},
-        {nullptr, "controller\\player_6\\ButtonColor\\Right", &osSettings.players.GetValue(true)[6].button_color_right, 0},
-        {nullptr, "controller\\player_6\\ProfileName", &osSettings.players.GetValue(true)[6].profile_name, ""},
-        {nullptr, "controller\\player_6\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[6].use_system_vibrator, false},
+        {nullptr, "controller\\player_7\\Connected", &osSettings.players[7].connected, false},
+        {nullptr, "controller\\player_7\\ControllerType", &osSettings.players[7].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_7\\Button\\A", &osSettings.players[7].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_7\\Button\\B", &osSettings.players[7].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_7\\Button\\X", &osSettings.players[7].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_7\\Button\\Y", &osSettings.players[7].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_7\\Button\\LStick", &osSettings.players[7].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_7\\Button\\RStick", &osSettings.players[7].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_7\\Button\\L", &osSettings.players[7].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_7\\Button\\R", &osSettings.players[7].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_7\\Button\\ZL", &osSettings.players[7].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_7\\Button\\ZR", &osSettings.players[7].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_7\\Button\\Plus", &osSettings.players[7].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_7\\Button\\Minus", &osSettings.players[7].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_7\\Button\\DLeft", &osSettings.players[7].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_7\\Button\\DUp", &osSettings.players[7].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_7\\Button\\DRight", &osSettings.players[7].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_7\\Button\\DDown", &osSettings.players[7].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_7\\Button\\SLLeft", &osSettings.players[7].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_7\\Button\\SRLeft", &osSettings.players[7].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_7\\Button\\Home", &osSettings.players[7].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_7\\Button\\Screenshot", &osSettings.players[7].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_7\\Button\\SLRight", &osSettings.players[7].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_7\\Button\\SRRight", &osSettings.players[7].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_7\\Analog\\LStick", &osSettings.players[7].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_7\\Analog\\RStick", &osSettings.players[7].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_7\\Motion\\Left", &osSettings.players[7].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_7\\Motion\\Right", &osSettings.players[7].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_7\\Vibration\\Enabled", &osSettings.players[7].vibration_enabled, false},
+        {nullptr, "controller\\player_7\\Vibration\\Strength", &osSettings.players[7].vibration_strength, 0},
+        {nullptr, "controller\\player_7\\BodyColor\\Left", &osSettings.players[7].body_color_left, 0},
+        {nullptr, "controller\\player_7\\BodyColor\\Right", &osSettings.players[7].body_color_right, 0},
+        {nullptr, "controller\\player_7\\ButtonColor\\Left", &osSettings.players[7].button_color_left, 0},
+        {nullptr, "controller\\player_7\\ButtonColor\\Right", &osSettings.players[7].button_color_right, 0},
+        {nullptr, "controller\\player_7\\ProfileName", &osSettings.players[7].profile_name, ""},
+        {nullptr, "controller\\player_7\\Vibration\\UseSystem", &osSettings.players[7].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_7\\Connected", &osSettings.players.GetValue(true)[7].connected, false},
-        {nullptr, "controller\\player_7\\ControllerType", &osSettings.players.GetValue(true)[7].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_7\\Button\\A", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_7\\Button\\B", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_7\\Button\\X", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_7\\Button\\Y", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_7\\Button\\LStick", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_7\\Button\\RStick", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_7\\Button\\L", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_7\\Button\\R", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_7\\Button\\ZL", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_7\\Button\\ZR", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_7\\Button\\Plus", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_7\\Button\\Minus", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_7\\Button\\DLeft", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_7\\Button\\DUp", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_7\\Button\\DRight", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_7\\Button\\DDown", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_7\\Button\\SLLeft", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_7\\Button\\SRLeft", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_7\\Button\\Home", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_7\\Button\\Screenshot", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_7\\Button\\SLRight", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_7\\Button\\SRRight", &osSettings.players.GetValue(true)[7].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_7\\Analog\\LStick", &osSettings.players.GetValue(true)[7].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_7\\Analog\\RStick", &osSettings.players.GetValue(true)[7].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_7\\Motion\\Left", &osSettings.players.GetValue(true)[7].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_7\\Motion\\Right", &osSettings.players.GetValue(true)[7].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_7\\Vibration\\Enabled", &osSettings.players.GetValue(true)[7].vibration_enabled, false},
-        {nullptr, "controller\\player_7\\Vibration\\Strength", &osSettings.players.GetValue(true)[7].vibration_strength, 0},
-        {nullptr, "controller\\player_7\\BodyColor\\Left", &osSettings.players.GetValue(true)[7].body_color_left, 0},
-        {nullptr, "controller\\player_7\\BodyColor\\Right", &osSettings.players.GetValue(true)[7].body_color_right, 0},
-        {nullptr, "controller\\player_7\\ButtonColor\\Left", &osSettings.players.GetValue(true)[7].button_color_left, 0},
-        {nullptr, "controller\\player_7\\ButtonColor\\Right", &osSettings.players.GetValue(true)[7].button_color_right, 0},
-        {nullptr, "controller\\player_7\\ProfileName", &osSettings.players.GetValue(true)[7].profile_name, ""},
-        {nullptr, "controller\\player_7\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[7].use_system_vibrator, false},
+        {nullptr, "controller\\player_8\\Connected", &osSettings.players[8].connected, false},
+        {nullptr, "controller\\player_8\\ControllerType", &osSettings.players[8].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_8\\Button\\A", &osSettings.players[8].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_8\\Button\\B", &osSettings.players[8].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_8\\Button\\X", &osSettings.players[8].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_8\\Button\\Y", &osSettings.players[8].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_8\\Button\\LStick", &osSettings.players[8].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_8\\Button\\RStick", &osSettings.players[8].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_8\\Button\\L", &osSettings.players[8].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_8\\Button\\R", &osSettings.players[8].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_8\\Button\\ZL", &osSettings.players[8].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_8\\Button\\ZR", &osSettings.players[8].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_8\\Button\\Plus", &osSettings.players[8].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_8\\Button\\Minus", &osSettings.players[8].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_8\\Button\\DLeft", &osSettings.players[8].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_8\\Button\\DUp", &osSettings.players[8].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_8\\Button\\DRight", &osSettings.players[8].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_8\\Button\\DDown", &osSettings.players[8].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_8\\Button\\SLLeft", &osSettings.players[8].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_8\\Button\\SRLeft", &osSettings.players[8].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_8\\Button\\Home", &osSettings.players[8].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_8\\Button\\Screenshot", &osSettings.players[8].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_8\\Button\\SLRight", &osSettings.players[8].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_8\\Button\\SRRight", &osSettings.players[8].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_8\\Analog\\LStick", &osSettings.players[8].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_8\\Analog\\RStick", &osSettings.players[8].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_8\\Motion\\Left", &osSettings.players[8].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_8\\Motion\\Right", &osSettings.players[8].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_8\\Vibration\\Enabled", &osSettings.players[8].vibration_enabled, false},
+        {nullptr, "controller\\player_8\\Vibration\\Strength", &osSettings.players[8].vibration_strength, 0},
+        {nullptr, "controller\\player_8\\BodyColor\\Left", &osSettings.players[8].body_color_left, 0},
+        {nullptr, "controller\\player_8\\BodyColor\\Right", &osSettings.players[8].body_color_right, 0},
+        {nullptr, "controller\\player_8\\ButtonColor\\Left", &osSettings.players[8].button_color_left, 0},
+        {nullptr, "controller\\player_8\\ButtonColor\\Right", &osSettings.players[8].button_color_right, 0},
+        {nullptr, "controller\\player_8\\ProfileName", &osSettings.players[8].profile_name, ""},
+        {nullptr, "controller\\player_8\\Vibration\\UseSystem", &osSettings.players[8].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_8\\Connected", &osSettings.players.GetValue(true)[8].connected, false},
-        {nullptr, "controller\\player_8\\ControllerType", &osSettings.players.GetValue(true)[8].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_8\\Button\\A", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_8\\Button\\B", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_8\\Button\\X", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_8\\Button\\Y", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_8\\Button\\LStick", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_8\\Button\\RStick", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_8\\Button\\L", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_8\\Button\\R", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_8\\Button\\ZL", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_8\\Button\\ZR", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_8\\Button\\Plus", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_8\\Button\\Minus", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_8\\Button\\DLeft", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_8\\Button\\DUp", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_8\\Button\\DRight", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_8\\Button\\DDown", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_8\\Button\\SLLeft", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_8\\Button\\SRLeft", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_8\\Button\\Home", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_8\\Button\\Screenshot", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_8\\Button\\SLRight", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_8\\Button\\SRRight", &osSettings.players.GetValue(true)[8].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_8\\Analog\\LStick", &osSettings.players.GetValue(true)[8].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_8\\Analog\\RStick", &osSettings.players.GetValue(true)[8].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_8\\Motion\\Left", &osSettings.players.GetValue(true)[8].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_8\\Motion\\Right", &osSettings.players.GetValue(true)[8].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_8\\Vibration\\Enabled", &osSettings.players.GetValue(true)[8].vibration_enabled, false},
-        {nullptr, "controller\\player_8\\Vibration\\Strength", &osSettings.players.GetValue(true)[8].vibration_strength, 0},
-        {nullptr, "controller\\player_8\\BodyColor\\Left", &osSettings.players.GetValue(true)[8].body_color_left, 0},
-        {nullptr, "controller\\player_8\\BodyColor\\Right", &osSettings.players.GetValue(true)[8].body_color_right, 0},
-        {nullptr, "controller\\player_8\\ButtonColor\\Left", &osSettings.players.GetValue(true)[8].button_color_left, 0},
-        {nullptr, "controller\\player_8\\ButtonColor\\Right", &osSettings.players.GetValue(true)[8].button_color_right, 0},
-        {nullptr, "controller\\player_8\\ProfileName", &osSettings.players.GetValue(true)[8].profile_name, ""},
-        {nullptr, "controller\\player_8\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[8].use_system_vibrator, false},
+        {nullptr, "controller\\player_9\\Connected", &osSettings.players[9].connected, false},
+        {nullptr, "controller\\player_9\\ControllerType", &osSettings.players[9].controller_type, ControllerType::ProController},
+        {nullptr, "controller\\player_9\\Button\\A", &osSettings.players[9].buttons[(size_t)NativeButtonValues::A], ""},
+        {nullptr, "controller\\player_9\\Button\\B", &osSettings.players[9].buttons[(size_t)NativeButtonValues::B], ""},
+        {nullptr, "controller\\player_9\\Button\\X", &osSettings.players[9].buttons[(size_t)NativeButtonValues::X], ""},
+        {nullptr, "controller\\player_9\\Button\\Y", &osSettings.players[9].buttons[(size_t)NativeButtonValues::Y], ""},
+        {nullptr, "controller\\player_9\\Button\\LStick", &osSettings.players[9].buttons[(size_t)NativeButtonValues::LStick], ""},
+        {nullptr, "controller\\player_9\\Button\\RStick", &osSettings.players[9].buttons[(size_t)NativeButtonValues::RStick], ""},
+        {nullptr, "controller\\player_9\\Button\\L", &osSettings.players[9].buttons[(size_t)NativeButtonValues::L], ""},
+        {nullptr, "controller\\player_9\\Button\\R", &osSettings.players[9].buttons[(size_t)NativeButtonValues::R], ""},
+        {nullptr, "controller\\player_9\\Button\\ZL", &osSettings.players[9].buttons[(size_t)NativeButtonValues::ZL], ""},
+        {nullptr, "controller\\player_9\\Button\\ZR", &osSettings.players[9].buttons[(size_t)NativeButtonValues::ZR], ""},
+        {nullptr, "controller\\player_9\\Button\\Plus", &osSettings.players[9].buttons[(size_t)NativeButtonValues::Plus], ""},
+        {nullptr, "controller\\player_9\\Button\\Minus", &osSettings.players[9].buttons[(size_t)NativeButtonValues::Minus], ""},
+        {nullptr, "controller\\player_9\\Button\\DLeft", &osSettings.players[9].buttons[(size_t)NativeButtonValues::DLeft], ""},
+        {nullptr, "controller\\player_9\\Button\\DUp", &osSettings.players[9].buttons[(size_t)NativeButtonValues::DUp], ""},
+        {nullptr, "controller\\player_9\\Button\\DRight", &osSettings.players[9].buttons[(size_t)NativeButtonValues::DRight], ""},
+        {nullptr, "controller\\player_9\\Button\\DDown", &osSettings.players[9].buttons[(size_t)NativeButtonValues::DDown], ""},
+        {nullptr, "controller\\player_9\\Button\\SLLeft", &osSettings.players[9].buttons[(size_t)NativeButtonValues::SLLeft], ""},
+        {nullptr, "controller\\player_9\\Button\\SRLeft", &osSettings.players[9].buttons[(size_t)NativeButtonValues::SRLeft], ""},
+        {nullptr, "controller\\player_9\\Button\\Home", &osSettings.players[9].buttons[(size_t)NativeButtonValues::Home], ""},
+        {nullptr, "controller\\player_9\\Button\\Screenshot", &osSettings.players[9].buttons[(size_t)NativeButtonValues::Screenshot], ""},
+        {nullptr, "controller\\player_9\\Button\\SLRight", &osSettings.players[9].buttons[(size_t)NativeButtonValues::SLRight], ""},
+        {nullptr, "controller\\player_9\\Button\\SRRight", &osSettings.players[9].buttons[(size_t)NativeButtonValues::SRRight], ""},
+        {nullptr, "controller\\player_9\\Analog\\LStick", &osSettings.players[9].analogs[(size_t)NativeAnalogValues::LStick], ""},
+        {nullptr, "controller\\player_9\\Analog\\RStick", &osSettings.players[9].analogs[(size_t)NativeAnalogValues::RStick], ""},
+        {nullptr, "controller\\player_9\\Motion\\Left", &osSettings.players[9].motions[(size_t)NativeMotionValues::MotionLeft], ""},
+        {nullptr, "controller\\player_9\\Motion\\Right", &osSettings.players[9].motions[(size_t)NativeMotionValues::MotionRight], ""},
+        {nullptr, "controller\\player_9\\Vibration\\Enabled", &osSettings.players[9].vibration_enabled, false},
+        {nullptr, "controller\\player_9\\Vibration\\Strength", &osSettings.players[9].vibration_strength, 0},
+        {nullptr, "controller\\player_9\\BodyColor\\Left", &osSettings.players[9].body_color_left, 0},
+        {nullptr, "controller\\player_9\\BodyColor\\Right", &osSettings.players[9].body_color_right, 0},
+        {nullptr, "controller\\player_9\\ButtonColor\\Left", &osSettings.players[9].button_color_left, 0},
+        {nullptr, "controller\\player_9\\ButtonColor\\Right", &osSettings.players[9].button_color_right, 0},
+        {nullptr, "controller\\player_9\\ProfileName", &osSettings.players[9].profile_name, ""},
+        {nullptr, "controller\\player_9\\Vibration\\UseSystem", &osSettings.players[9].use_system_vibrator, false},
 
-        {nullptr, "controller\\player_9\\Connected", &osSettings.players.GetValue(true)[9].connected, false},
-        {nullptr, "controller\\player_9\\ControllerType", &osSettings.players.GetValue(true)[9].controller_type, ControllerType::ProController},
-        {nullptr, "controller\\player_9\\Button\\A", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::A], ""},
-        {nullptr, "controller\\player_9\\Button\\B", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::B], ""},
-        {nullptr, "controller\\player_9\\Button\\X", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::X], ""},
-        {nullptr, "controller\\player_9\\Button\\Y", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::Y], ""},
-        {nullptr, "controller\\player_9\\Button\\LStick", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::LStick], ""},
-        {nullptr, "controller\\player_9\\Button\\RStick", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::RStick], ""},
-        {nullptr, "controller\\player_9\\Button\\L", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::L], ""},
-        {nullptr, "controller\\player_9\\Button\\R", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::R], ""},
-        {nullptr, "controller\\player_9\\Button\\ZL", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::ZL], ""},
-        {nullptr, "controller\\player_9\\Button\\ZR", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::ZR], ""},
-        {nullptr, "controller\\player_9\\Button\\Plus", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::Plus], ""},
-        {nullptr, "controller\\player_9\\Button\\Minus", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::Minus], ""},
-        {nullptr, "controller\\player_9\\Button\\DLeft", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::DLeft], ""},
-        {nullptr, "controller\\player_9\\Button\\DUp", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::DUp], ""},
-        {nullptr, "controller\\player_9\\Button\\DRight", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::DRight], ""},
-        {nullptr, "controller\\player_9\\Button\\DDown", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::DDown], ""},
-        {nullptr, "controller\\player_9\\Button\\SLLeft", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::SLLeft], ""},
-        {nullptr, "controller\\player_9\\Button\\SRLeft", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::SRLeft], ""},
-        {nullptr, "controller\\player_9\\Button\\Home", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::Home], ""},
-        {nullptr, "controller\\player_9\\Button\\Screenshot", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::Screenshot], ""},
-        {nullptr, "controller\\player_9\\Button\\SLRight", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::SLRight], ""},
-        {nullptr, "controller\\player_9\\Button\\SRRight", &osSettings.players.GetValue(true)[9].buttons[(size_t)NativeButtonValues::SRRight], ""},
-        {nullptr, "controller\\player_9\\Analog\\LStick", &osSettings.players.GetValue(true)[9].analogs[(size_t)NativeAnalogValues::LStick], ""},
-        {nullptr, "controller\\player_9\\Analog\\RStick", &osSettings.players.GetValue(true)[9].analogs[(size_t)NativeAnalogValues::RStick], ""},
-        {nullptr, "controller\\player_9\\Motion\\Left", &osSettings.players.GetValue(true)[9].motions[(size_t)NativeMotionValues::MotionLeft], ""},
-        {nullptr, "controller\\player_9\\Motion\\Right", &osSettings.players.GetValue(true)[9].motions[(size_t)NativeMotionValues::MotionRight], ""},
-        {nullptr, "controller\\player_9\\Vibration\\Enabled", &osSettings.players.GetValue(true)[9].vibration_enabled, false},
-        {nullptr, "controller\\player_9\\Vibration\\Strength", &osSettings.players.GetValue(true)[9].vibration_strength, 0},
-        {nullptr, "controller\\player_9\\BodyColor\\Left", &osSettings.players.GetValue(true)[9].body_color_left, 0},
-        {nullptr, "controller\\player_9\\BodyColor\\Right", &osSettings.players.GetValue(true)[9].body_color_right, 0},
-        {nullptr, "controller\\player_9\\ButtonColor\\Left", &osSettings.players.GetValue(true)[9].button_color_left, 0},
-        {nullptr, "controller\\player_9\\ButtonColor\\Right", &osSettings.players.GetValue(true)[9].button_color_right, 0},
-        {nullptr, "controller\\player_9\\ProfileName", &osSettings.players.GetValue(true)[9].profile_name, ""},
-        {nullptr, "controller\\player_9\\Vibration\\UseSystem", &osSettings.players.GetValue(true)[9].use_system_vibrator, false},
-
-        {NXOsSetting::AudioSinkId, "audio\\sink_id", &osSettings.sink_id},
-        {NXOsSetting::AudioOutputDeviceId, "audio\\output_device_id", &osSettings.audio_output_device_id},
-        {NXOsSetting::AudioInputDeviceId, "audio\\input_device_id", &osSettings.audio_input_device_id},
-        {NXOsSetting::AudioMode, "audio\\mode", &osSettings.sound_index},
-        {NXOsSetting::AudioVolume, "audio\\volume", &osSettings.volume},
-        {NXOsSetting::AudioMuted, "audio\\muted", &osSettings.audio_muted},
-        {NXOsSetting::SpeedLimit, "system\\speed_limit", &Settings::values.speed_limit},
-        {NXOsSetting::UseMultiCore, "system\\use_multi_core", &Settings::values.use_multi_core},
-        {NXOsSetting::UseSpeedLimit, "system\\use_speed_limit", &Settings::values.use_speed_limit},
-        {NXOsSetting::LanguageIndex, "system\\language_index", &osSettings.language_index},
-        {NXOsSetting::CurrentUser, "system\\current_user", &osSettings.current_user},
-        {NXOsSetting::RngSeedEnabled, "system\\rng_seed_enabled", &osSettings.rng_seed_enabled},
-        {NXOsSetting::RngSeed, "system\\rng_seed", &osSettings.rng_seed},
-        {NXOsSetting::CustomRtcEnabled, "system\\custom_rtc_enabled", &osSettings.custom_rtc_enabled},
-        {NXOsSetting::CustomRtcOffset, "system\\custom_rtc_offset", &osSettings.custom_rtc_offset},
-        {NXOsSetting::DockedMode, "system\\docked_mode", &osSettings.use_docked_mode},
+        {NXOsSetting::AudioSinkId, "audio\\sink_id", &osSettings.sink_id, Settings::AudioEngine::Auto},
+        {NXOsSetting::AudioOutputDeviceId, "audio\\output_device_id", &osSettings.audio_output_device_id, "auto"},
+        {NXOsSetting::AudioInputDeviceId, "audio\\input_device_id", &osSettings.audio_input_device_id, "auto"},
+        {NXOsSetting::AudioMode, "audio\\mode", &osSettings.sound_index, Settings::AudioMode::Stereo},
+        {NXOsSetting::AudioVolume, "audio\\volume", &osSettings.volume, 100, 0, 200},
+        {NXOsSetting::AudioMuted, "audio\\muted", &osSettings.audio_muted, false},
+        {NXOsSetting::SpeedLimit, "system\\speed_limit", &osSettings.speed_limit, 100, 0, 9999},
+        {NXOsSetting::UseMultiCore, "system\\use_multi_core", &osSettings.use_multi_core, true},
+        {NXOsSetting::UseSpeedLimit, "system\\use_speed_limit", &osSettings.use_speed_limit, true},
+        {NXOsSetting::LanguageIndex, "system\\language_index", &osSettings.language_index, Settings::Language::EnglishAmerican},
+        {NXOsSetting::CurrentUser, "system\\current_user", &osSettings.current_user, 0},
+        {NXOsSetting::RngSeedEnabled, "system\\rng_seed_enabled", &osSettings.rng_seed_enabled, false},
+        {NXOsSetting::RngSeed, "system\\rng_seed", &osSettings.rng_seed, 0u},
+        {NXOsSetting::CustomRtcEnabled, "system\\custom_rtc_enabled", &osSettings.custom_rtc_enabled, false},
+        {NXOsSetting::CustomRtcOffset, "system\\custom_rtc_offset", &osSettings.custom_rtc_offset, 0, INT_MIN, INT_MAX},
+#ifdef ANDROID
+        {NXOsSetting::DockedMode, "system\\docked_mode", &osSettings.use_docked_mode, Settings::DockedMode::Handheld},
+#else
+        {NXOsSetting::DockedMode, "system\\docked_mode", &osSettings.use_docked_mode, Settings::DockedMode::Docked},
+#endif
     };
 
     template <typename T>
@@ -533,7 +546,26 @@ namespace
         }
         return {};
     }
+
+void ApplyRangedInt(OsSetting & osSetting, int32_t value)
+{
+    const int32_t clamped = std::clamp(value, osSetting.minValue, osSetting.maxValue);
+    if (osSetting.rangedWidth == RangedWidth::U8)
+    {
+        *osSetting.value.u8Value = static_cast<u8>(clamped);
+    }
+    else
+    {
+        *osSetting.value.u16Value = static_cast<u16>(clamped);
+    }
 }
+
+void ApplyRangedS64(OsSetting & osSetting, s64 value)
+{
+    *osSetting.value.s64Value = std::clamp(value, osSetting.minValueS64, osSetting.maxValueS64);
+}
+
+} // namespace
 
 void OsSettingChanged(const char * setting, void * /*userData*/)
 {
@@ -550,44 +582,44 @@ void OsSettingChanged(const char * setting, void * /*userData*/)
         }
         switch (osSetting.settingType)
         {
-        case SettingType::StringSetting:
-            osSetting.setting.stringSetting->SetValue(g_settings->GetString(setting));
+        case SettingType::Boolean:
+            *osSetting.value.boolValue = g_settings->GetBool(setting);
             break;
-        case SettingType::AudioEngine:
-            osSetting.setting.audioEngine->SetValue((Settings::AudioEngine)g_settings->GetInt(setting));
+        case SettingType::IntValue:
+            *osSetting.value.intValue = g_settings->GetInt(setting);
             break;
-        case SettingType::AudioMode:
-            osSetting.setting.audioMode->SetValue((Settings::AudioMode)g_settings->GetInt(setting));
+        case SettingType::IntValueRanged:
+            ApplyRangedInt(const_cast<OsSetting &>(osSetting), g_settings->GetInt(setting));
             break;
-        case SettingType::Language:
-            osSetting.setting.languageIndex->SetValue((Settings::Language)g_settings->GetInt(setting));
+        case SettingType::S32:
+            *osSetting.value.s32Value = g_settings->GetInt(setting);
             break;
-        case SettingType::DockedMode:
-            osSetting.setting.dockedMode->SetValue((Settings::DockedMode)g_settings->GetInt(setting));
+        case SettingType::S64Ranged:
+            ApplyRangedS64(const_cast<OsSetting &>(osSetting), static_cast<s64>(g_settings->GetInt(setting)));
             break;
-        case SettingType::U8:
-            osSetting.setting.u8->SetValue(g_settings->GetInt(setting));
-            break;
-        case SettingType::BooleanSetting:
-            osSetting.setting.booleanSetting->SetValue(g_settings->GetBool(setting));
-            break;
-        case SettingType::BooleanSwitchable:
-            osSetting.setting.booleanSwitchable->SetValue(g_settings->GetBool(setting));
-            break;
-        case SettingType::BooleanValue:
-            *osSetting.setting.boolValue = g_settings->GetBool(setting);
+        case SettingType::U32:
+            *osSetting.value.u32Value = static_cast<u32>(g_settings->GetInt(setting));
             break;
         case SettingType::Float:
-            *osSetting.setting.floatValue = g_settings->GetFloat(setting);
+            *osSetting.value.floatValue = g_settings->GetFloat(setting);
             break;
-        case SettingType::S32Setting:
-            osSetting.setting.s32Setting->SetValue(g_settings->GetInt(setting));
+        case SettingType::String:
+            *osSetting.value.stringValue = g_settings->GetString(setting);
             break;
-        case SettingType::U32Switchable:
-            osSetting.setting.u32Switchable->SetValue(static_cast<u32>(g_settings->GetInt(setting)));
+        case SettingType::ControllerType:
+            *osSetting.value.controllerType = static_cast<ControllerType>(g_settings->GetInt(setting));
             break;
-        case SettingType::S64Switchable:
-            osSetting.setting.s64Switchable->SetValue(static_cast<s64>(g_settings->GetInt(setting)));
+        case SettingType::AudioEngine:
+            *osSetting.value.audioEngine = static_cast<Settings::AudioEngine>(g_settings->GetInt(setting));
+            break;
+        case SettingType::AudioMode:
+            *osSetting.value.audioMode = static_cast<Settings::AudioMode>(g_settings->GetInt(setting));
+            break;
+        case SettingType::Language:
+            *osSetting.value.language = static_cast<Settings::Language>(g_settings->GetInt(setting));
+            break;
+        case SettingType::DockedMode:
+            *osSetting.value.dockedMode = static_cast<Settings::DockedMode>(g_settings->GetInt(setting));
             break;
         default:
             UNIMPLEMENTED();
@@ -595,62 +627,112 @@ void OsSettingChanged(const char * setting, void * /*userData*/)
     }
 }
 
+namespace
+{
+
+void InitializeOsSettingDefaults()
+{
+    osSettings.cabinet_applet_mode = Settings::AppletMode::LLE;
+    osSettings.controller_applet_mode = Settings::AppletMode::HLE;
+    osSettings.data_erase_applet_mode = Settings::AppletMode::HLE;
+    osSettings.error_applet_mode = Settings::AppletMode::LLE;
+    osSettings.net_connect_applet_mode = Settings::AppletMode::HLE;
+    osSettings.player_select_applet_mode = Settings::AppletMode::HLE;
+    osSettings.swkbd_applet_mode = Settings::AppletMode::LLE;
+    osSettings.mii_edit_applet_mode = Settings::AppletMode::LLE;
+    osSettings.web_applet_mode = Settings::AppletMode::HLE;
+    osSettings.shop_applet_mode = Settings::AppletMode::HLE;
+    osSettings.photo_viewer_applet_mode = Settings::AppletMode::LLE;
+    osSettings.offline_web_applet_mode = Settings::AppletMode::LLE;
+    osSettings.login_share_applet_mode = Settings::AppletMode::HLE;
+    osSettings.wifi_web_auth_applet_mode = Settings::AppletMode::HLE;
+    osSettings.my_page_applet_mode = Settings::AppletMode::LLE;
+
+    osSettings.dump_audio_commands = false;
+    osSettings.region_index = Settings::Region::Usa;
+    osSettings.time_zone_index = Settings::TimeZone::Auto;
+    osSettings.custom_rtc = 0;
+    osSettings.device_name = "NxEmu";
+    osSettings.enable_gamemode = true;
+    osSettings.enable_raw_input = false;
+    osSettings.controller_navigation = true;
+    osSettings.enable_joycon_driver = true;
+    osSettings.enable_procon_driver = false;
+    osSettings.vibration_enabled = true;
+    osSettings.enable_accurate_vibrations = false;
+    osSettings.motion_enabled = true;
+    osSettings.udp_input_servers = "127.0.0.1:26760";
+    osSettings.enable_udp_controller = false;
+    osSettings.pause_tas_on_load = true;
+    osSettings.tas_enable = false;
+    osSettings.tas_loop = false;
+    osSettings.mouse_panning = false;
+    osSettings.mouse_panning_sensitivity = 50;
+    osSettings.mouse_enabled = false;
+    osSettings.mouse_panning_x_sensitivity = 50;
+    osSettings.mouse_panning_y_sensitivity = 50;
+    osSettings.mouse_panning_deadzone_counterweight = 20;
+    osSettings.mouse_panning_decay_strength = 18;
+    osSettings.mouse_panning_min_decay = 6;
+    osSettings.emulate_analog_keyboard = false;
+    osSettings.keyboard_enabled = false;
+    osSettings.debug_pad_enabled = false;
+    osSettings.touch_device = "min_x:100,min_y:50,max_x:1800,max_y:850";
+    osSettings.touch_from_button_map_index = 0;
+    osSettings.enable_ring_controller = true;
+    osSettings.enable_ir_sensor = false;
+    osSettings.ir_sensor_device = "auto";
+    osSettings.random_amiibo_id = false;
+}
+
+} // namespace
+
 void SetupOsSetting(void)
 {
+    InitializeOsSettingDefaults();
+
     for (const OsSetting & osSetting : settings)
     {
         switch (osSetting.settingType)
         {
-        case SettingType::StringSetting:
-            osSetting.setting.stringSetting->SetValue(osSetting.setting.stringSetting->GetDefault());
+        case SettingType::Boolean:
+            *osSetting.value.boolValue = osSetting.defaults.boolValue;
             break;
-        case SettingType::AudioEngine:
-            osSetting.setting.audioEngine->SetValue(osSetting.setting.audioEngine->GetDefault());
+        case SettingType::IntValue:
+            *osSetting.value.intValue = osSetting.defaults.intValue;
             break;
-        case SettingType::AudioMode:
-            osSetting.setting.audioMode->SetValue(osSetting.setting.audioMode->GetDefault());
+        case SettingType::IntValueRanged:
+            ApplyRangedInt(const_cast<OsSetting &>(osSetting), osSetting.defaults.intValue);
             break;
-        case SettingType::Language:
-            osSetting.setting.languageIndex->SetValue(osSetting.setting.languageIndex->GetDefault());
+        case SettingType::S32:
+            *osSetting.value.s32Value = osSetting.defaults.s32Value;
             break;
-        case SettingType::DockedMode:
-            osSetting.setting.dockedMode->SetValue(osSetting.setting.dockedMode->GetDefault());
+        case SettingType::S64Ranged:
+            ApplyRangedS64(const_cast<OsSetting &>(osSetting), osSetting.defaults.s64Value);
             break;
-        case SettingType::U8:
-            osSetting.setting.u8->SetValue(osSetting.setting.u8->GetDefault());
-            break;
-        case SettingType::U16:
-            osSetting.setting.u16->SetValue(osSetting.setting.u16->GetDefault());
-            break;
-        case SettingType::BooleanSwitchable:
-            osSetting.setting.booleanSwitchable->SetValue(osSetting.setting.booleanSwitchable->GetDefault());
-            break;
-        case SettingType::BooleanSetting:
-            osSetting.setting.booleanSetting->SetValue(osSetting.setting.booleanSetting->GetDefault());
-            break;
-        case SettingType::BooleanValue:
-            *osSetting.setting.boolValue = osSetting.defaultValue.boolValue;
-            break;
-        case SettingType::UnsignedInt:
-            *osSetting.setting.uint32Value = osSetting.defaultValue.uint32Value;
+        case SettingType::U32:
+            *osSetting.value.u32Value = osSetting.defaults.u32Value;
             break;
         case SettingType::Float:
-            *osSetting.setting.floatValue = osSetting.defaultValue.floatValue;
+            *osSetting.value.floatValue = osSetting.defaults.floatValue;
             break;
-        case SettingType::StringValue:
-            *osSetting.setting.stringValue = osSetting.defaultValue.sringValue;
+        case SettingType::String:
+            *osSetting.value.stringValue = osSetting.defaults.stringValue;
             break;
         case SettingType::ControllerType:
-            *osSetting.setting.controllerType = osSetting.defaultValue.controllerType;
+            *osSetting.value.controllerType = osSetting.defaults.controllerType;
             break;
-        case SettingType::S32Setting:
-            osSetting.setting.s32Setting->SetValue(osSetting.setting.s32Setting->GetDefault());
+        case SettingType::AudioEngine:
+            *osSetting.value.audioEngine = osSetting.defaults.audioEngine;
             break;
-        case SettingType::U32Switchable:
-            osSetting.setting.u32Switchable->SetValue(osSetting.setting.u32Switchable->GetDefault());
+        case SettingType::AudioMode:
+            *osSetting.value.audioMode = osSetting.defaults.audioMode;
             break;
-        case SettingType::S64Switchable:
-            osSetting.setting.s64Switchable->SetValue(osSetting.setting.s64Switchable->GetDefault());
+        case SettingType::Language:
+            *osSetting.value.language = osSetting.defaults.language;
+            break;
+        case SettingType::DockedMode:
+            *osSetting.value.dockedMode = osSetting.defaults.dockedMode;
             break;
         default:
             UNIMPLEMENTED();
@@ -668,110 +750,86 @@ void SetupOsSetting(void)
             JsonValue value = JsonGetNestedValue(root, osSetting.json_path);
             switch (osSetting.settingType)
             {
-            case SettingType::StringSetting:
-                if (value.isString())
-                {
-                    osSetting.setting.stringSetting->SetValue(value.asString());
-                }
-                break;
-            case SettingType::AudioEngine:
-                if (value.isString())
-                {
-                    osSetting.setting.audioEngine->SetValue(Settings::ToEnum<Settings::AudioEngine>(value.asString()));
-                }
-                break;
-            case SettingType::AudioMode:
-                if (value.isString())
-                {
-                    osSetting.setting.audioMode->SetValue(Settings::ToEnum<Settings::AudioMode>(value.asString()));
-                }
-                break;
-            case SettingType::Language:
-                if (value.isString())
-                {
-                    osSetting.setting.languageIndex->SetValue(Settings::ToEnum<Settings::Language>(value.asString()));
-                }
-                break;
-            case SettingType::DockedMode:
-                if (value.isString())
-                {
-                    osSetting.setting.dockedMode->SetValue(Settings::ToEnum<Settings::DockedMode>(value.asString()));
-                }
-                break;
-            case SettingType::U8:
-                if (value.isInt())
-                {
-                    osSetting.setting.u8->SetValue((uint8_t)value.asInt64());
-                }
-                break;
-            case SettingType::U16:
-                if (value.isInt())
-                {
-                    osSetting.setting.u16->SetValue((uint16_t)value.asInt64());
-                }
-                break;
-            case SettingType::BooleanSwitchable:
+            case SettingType::Boolean:
                 if (value.isBool())
                 {
-                    osSetting.setting.booleanSwitchable->SetValue(value.asBool());
+                    *osSetting.value.boolValue = value.asBool();
                 }
                 break;
-            case SettingType::BooleanSetting:
-                if (value.isBool())
-                {
-                    osSetting.setting.booleanSetting->SetValue(value.asBool());
-                }
-                break;
-            case SettingType::BooleanValue:
-                if (value.isBool())
-                {
-                    *osSetting.setting.boolValue = value.asBool();
-                }
-                break;
-            case SettingType::UnsignedInt:
+            case SettingType::IntValue:
                 if (value.isInt())
                 {
-                    *osSetting.setting.uint32Value = (uint32_t)value.asUInt64();
+                    *osSetting.value.intValue = static_cast<int32_t>(value.asInt64());
+                }
+                break;
+            case SettingType::IntValueRanged:
+                if (value.isInt())
+                {
+                    ApplyRangedInt(const_cast<OsSetting &>(osSetting), static_cast<int32_t>(value.asInt64()));
+                }
+                break;
+            case SettingType::S32:
+                if (value.isInt())
+                {
+                    *osSetting.value.s32Value = static_cast<s32>(value.asInt64());
+                }
+                break;
+            case SettingType::S64Ranged:
+                if (value.isInt())
+                {
+                    ApplyRangedS64(const_cast<OsSetting &>(osSetting), static_cast<s64>(value.asInt64()));
+                }
+                break;
+            case SettingType::U32:
+                if (value.isInt())
+                {
+                    *osSetting.value.u32Value = static_cast<u32>(value.asUInt64());
                 }
                 break;
             case SettingType::Float:
                 if (value.isDouble())
                 {
-                    *osSetting.setting.floatValue = (float)value.asDouble();
+                    *osSetting.value.floatValue = static_cast<float>(value.asDouble());
                 }
                 else if (value.isInt())
                 {
-                    *osSetting.setting.floatValue = (float)value.asInt64();
+                    *osSetting.value.floatValue = static_cast<float>(value.asInt64());
                 }
                 break;
-            case SettingType::StringValue:
+            case SettingType::String:
                 if (value.isString())
                 {
-                    *osSetting.setting.stringValue = value.asString();
+                    *osSetting.value.stringValue = value.asString();
                 }
                 break;
             case SettingType::ControllerType:
                 if (value.isString())
                 {
-                    *osSetting.setting.controllerType = ParseEnum<ControllerType>(value.asString());
+                    *osSetting.value.controllerType = ParseEnum<ControllerType>(value.asString());
                 }
                 break;
-            case SettingType::S32Setting:
-                if (value.isInt())
+            case SettingType::AudioEngine:
+                if (value.isString())
                 {
-                    osSetting.setting.s32Setting->SetValue(static_cast<s32>(value.asInt64()));
+                    *osSetting.value.audioEngine = Settings::ToEnum<Settings::AudioEngine>(value.asString());
                 }
                 break;
-            case SettingType::U32Switchable:
-                if (value.isInt())
+            case SettingType::AudioMode:
+                if (value.isString())
                 {
-                    osSetting.setting.u32Switchable->SetValue(static_cast<u32>(value.asUInt64()));
+                    *osSetting.value.audioMode = Settings::ToEnum<Settings::AudioMode>(value.asString());
                 }
                 break;
-            case SettingType::S64Switchable:
-                if (value.isInt())
+            case SettingType::Language:
+                if (value.isString())
                 {
-                    osSetting.setting.s64Switchable->SetValue(static_cast<s64>(value.asInt64()));
+                    *osSetting.value.language = Settings::ToEnum<Settings::Language>(value.asString());
+                }
+                break;
+            case SettingType::DockedMode:
+                if (value.isString())
+                {
+                    *osSetting.value.dockedMode = Settings::ToEnum<Settings::DockedMode>(value.asString());
                 }
                 break;
             default:
@@ -789,61 +847,63 @@ void SetupOsSetting(void)
 
         switch (osSetting.settingType)
         {
-        case SettingType::StringSetting:
-            g_settings->SetDefaultString(osSetting.identifier, osSetting.setting.stringSetting->GetDefault().c_str());
-            g_settings->SetString(osSetting.identifier, osSetting.setting.stringSetting->GetValue().c_str());
+        case SettingType::Boolean:
+            g_settings->SetDefaultBool(osSetting.identifier, osSetting.defaults.boolValue);
+            g_settings->SetBool(osSetting.identifier, *osSetting.value.boolValue);
             break;
-        case SettingType::AudioEngine:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.audioEngine->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.audioEngine->GetValue());
+        case SettingType::IntValue:
+            g_settings->SetDefaultInt(osSetting.identifier, osSetting.defaults.intValue);
+            g_settings->SetInt(osSetting.identifier, *osSetting.value.intValue);
             break;
-        case SettingType::AudioMode:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.audioMode->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.audioMode->GetValue());
+        case SettingType::IntValueRanged:
+            g_settings->SetDefaultInt(osSetting.identifier, osSetting.defaults.intValue);
+            ApplyRangedInt(const_cast<OsSetting &>(osSetting),
+                             osSetting.rangedWidth == RangedWidth::U8 ? static_cast<int32_t>(*osSetting.value.u8Value)
+                                                                      : static_cast<int32_t>(*osSetting.value.u16Value));
+            g_settings->SetInt(osSetting.identifier,
+                               osSetting.rangedWidth == RangedWidth::U8 ? static_cast<int32_t>(*osSetting.value.u8Value)
+                                                                       : static_cast<int32_t>(*osSetting.value.u16Value));
             break;
-        case SettingType::Language:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.languageIndex->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.languageIndex->GetValue());
+        case SettingType::S32:
+            g_settings->SetDefaultInt(osSetting.identifier, osSetting.defaults.s32Value);
+            g_settings->SetInt(osSetting.identifier, *osSetting.value.s32Value);
             break;
-        case SettingType::DockedMode:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.dockedMode->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.dockedMode->GetValue());
+        case SettingType::S64Ranged:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.s64Value));
+            ApplyRangedS64(const_cast<OsSetting &>(osSetting), *osSetting.value.s64Value);
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.s64Value));
             break;
-        case SettingType::U8:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.u8->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.u8->GetValue());
-            break;
-        case SettingType::U16:
-            g_settings->SetDefaultInt(osSetting.identifier, (int32_t)osSetting.setting.u16->GetDefault());
-            g_settings->SetInt(osSetting.identifier, (int32_t)osSetting.setting.u16->GetValue());
-            break;
-        case SettingType::BooleanSwitchable:
-            g_settings->SetDefaultBool(osSetting.identifier, osSetting.setting.booleanSwitchable->GetDefault() != 0);
-            g_settings->SetBool(osSetting.identifier, osSetting.setting.booleanSwitchable->GetValue() != 0);
-            break;
-        case SettingType::BooleanSetting:
-            g_settings->SetDefaultBool(osSetting.identifier, osSetting.setting.booleanSetting->GetDefault() != 0);
-            g_settings->SetBool(osSetting.identifier, osSetting.setting.booleanSetting->GetValue() != 0);
-            break;
-        case SettingType::BooleanValue:
-            g_settings->SetDefaultBool(osSetting.identifier, osSetting.defaultValue.boolValue);
-            g_settings->SetBool(osSetting.identifier, *osSetting.setting.boolValue);
+        case SettingType::U32:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.u32Value));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.u32Value));
             break;
         case SettingType::Float:
-            g_settings->SetDefaultFloat(osSetting.identifier, osSetting.defaultValue.floatValue);
-            g_settings->SetFloat(osSetting.identifier, *osSetting.setting.floatValue);
+            g_settings->SetDefaultFloat(osSetting.identifier, osSetting.defaults.floatValue);
+            g_settings->SetFloat(osSetting.identifier, *osSetting.value.floatValue);
             break;
-        case SettingType::S32Setting:
-            g_settings->SetDefaultInt(osSetting.identifier, osSetting.setting.s32Setting->GetDefault());
-            g_settings->SetInt(osSetting.identifier, osSetting.setting.s32Setting->GetValue());
+        case SettingType::String:
+            g_settings->SetDefaultString(osSetting.identifier, osSetting.defaults.stringValue);
+            g_settings->SetString(osSetting.identifier, osSetting.value.stringValue->c_str());
             break;
-        case SettingType::U32Switchable:
-            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.setting.u32Switchable->GetDefault()));
-            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(osSetting.setting.u32Switchable->GetValue()));
+        case SettingType::ControllerType:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.controllerType));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.controllerType));
             break;
-        case SettingType::S64Switchable:
-            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.setting.s64Switchable->GetDefault()));
-            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(osSetting.setting.s64Switchable->GetValue()));
+        case SettingType::AudioEngine:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.audioEngine));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.audioEngine));
+            break;
+        case SettingType::AudioMode:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.audioMode));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.audioMode));
+            break;
+        case SettingType::Language:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.language));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.language));
+            break;
+        case SettingType::DockedMode:
+            g_settings->SetDefaultInt(osSetting.identifier, static_cast<int32_t>(osSetting.defaults.dockedMode));
+            g_settings->SetInt(osSetting.identifier, static_cast<int32_t>(*osSetting.value.dockedMode));
             break;
         default:
             UNIMPLEMENTED();
@@ -860,108 +920,85 @@ void SaveOsSettings(void)
     {
         switch (osSetting.settingType)
         {
-        case SettingType::StringSetting:
-            if (osSetting.setting.stringSetting->GetValue() != osSetting.setting.stringSetting->GetDefault())
+        case SettingType::Boolean:
+            if (*osSetting.value.boolValue != osSetting.defaults.boolValue)
             {
-                JsonSetNestedValue(root, osSetting.json_path, osSetting.setting.stringSetting->GetValue());
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.boolValue);
             }
             break;
-        case SettingType::AudioEngine:
-            if (osSetting.setting.audioEngine->GetValue() != osSetting.setting.audioEngine->GetDefault())
+        case SettingType::IntValue:
+            if (*osSetting.value.intValue != osSetting.defaults.intValue)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(osSetting.setting.audioEngine->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.intValue);
             }
             break;
-        case SettingType::AudioMode:
-            if (osSetting.setting.audioMode->GetValue() != osSetting.setting.audioMode->GetDefault())
+        case SettingType::IntValueRanged:
+            if ((osSetting.rangedWidth == RangedWidth::U8 && *osSetting.value.u8Value != static_cast<u8>(osSetting.defaults.intValue)) ||
+                (osSetting.rangedWidth == RangedWidth::U16 && *osSetting.value.u16Value != static_cast<u16>(osSetting.defaults.intValue)))
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(osSetting.setting.audioMode->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path,
+                                   osSetting.rangedWidth == RangedWidth::U8 ? static_cast<int32_t>(*osSetting.value.u8Value)
+                                                                            : static_cast<int32_t>(*osSetting.value.u16Value));
             }
             break;
-        case SettingType::Language:
-            if (osSetting.setting.languageIndex->GetValue() != osSetting.setting.languageIndex->GetDefault())
+        case SettingType::S32:
+            if (*osSetting.value.s32Value != osSetting.defaults.s32Value)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(osSetting.setting.languageIndex->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.s32Value);
             }
             break;
-        case SettingType::DockedMode:
-            if (osSetting.setting.dockedMode->GetValue() != osSetting.setting.dockedMode->GetDefault())
+        case SettingType::S64Ranged:
+            if (*osSetting.value.s64Value != osSetting.defaults.s64Value)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(osSetting.setting.dockedMode->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path, static_cast<int32_t>(*osSetting.value.s64Value));
             }
             break;
-        case SettingType::U8:
-            if (osSetting.setting.u8->GetValue() != osSetting.setting.u8->GetDefault())
+        case SettingType::U32:
+            if (*osSetting.value.u32Value != osSetting.defaults.u32Value)
             {
-                JsonSetNestedValue(root, osSetting.json_path, (int32_t)osSetting.setting.u8->GetValue());
-            }
-            break;
-        case SettingType::U16:
-            if (osSetting.setting.u16->GetValue() != osSetting.setting.u16->GetDefault())
-            {
-                JsonSetNestedValue(root, osSetting.json_path, (int32_t)osSetting.setting.u16->GetValue());
-            }
-            break;
-        case SettingType::BooleanSwitchable:
-            if (osSetting.setting.booleanSwitchable->GetValue() != osSetting.setting.booleanSwitchable->GetDefault())
-            {
-                JsonSetNestedValue(root, osSetting.json_path, osSetting.setting.booleanSwitchable->GetValue() != 0);
-            }
-            break;
-        case SettingType::BooleanSetting:
-            if (osSetting.setting.booleanSetting->GetValue() != osSetting.setting.booleanSetting->GetDefault())
-            {
-                JsonSetNestedValue(root, osSetting.json_path, osSetting.setting.booleanSetting->GetValue() != 0);
-            }
-            break;
-        case SettingType::BooleanValue:
-            if (*osSetting.setting.boolValue != osSetting.defaultValue.boolValue)
-            {
-                JsonSetNestedValue(root, osSetting.json_path, *osSetting.setting.boolValue != 0);
-            }
-            break;
-        case SettingType::UnsignedInt:
-            if (*osSetting.setting.uint32Value != osSetting.defaultValue.uint32Value)
-            {
-                JsonSetNestedValue(root, osSetting.json_path, *osSetting.setting.uint32Value);
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.u32Value);
             }
             break;
         case SettingType::Float:
-            if (*osSetting.setting.floatValue != osSetting.defaultValue.floatValue)
+            if (*osSetting.value.floatValue != osSetting.defaults.floatValue)
             {
-                JsonSetNestedValue(root, osSetting.json_path, *osSetting.setting.floatValue);
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.floatValue);
             }
             break;
-        case SettingType::StringValue:
-            if (*osSetting.setting.stringValue != osSetting.defaultValue.sringValue)
+        case SettingType::String:
+            if (*osSetting.value.stringValue != osSetting.defaults.stringValue)
             {
-                JsonSetNestedValue(root, osSetting.json_path, *osSetting.setting.stringValue);
+                JsonSetNestedValue(root, osSetting.json_path, *osSetting.value.stringValue);
             }
             break;
         case SettingType::ControllerType:
-            if (*osSetting.setting.controllerType != osSetting.defaultValue.controllerType)
+            if (*osSetting.value.controllerType != osSetting.defaults.controllerType)
             {
-                JsonSetNestedValue(root, osSetting.json_path, CanonicalizeEnum(*osSetting.setting.controllerType));
+                JsonSetNestedValue(root, osSetting.json_path, CanonicalizeEnum(*osSetting.value.controllerType));
             }
             break;
-        case SettingType::S32Setting:
-            if (osSetting.setting.s32Setting->GetValue() != osSetting.setting.s32Setting->GetDefault())
+        case SettingType::AudioEngine:
+            if (*osSetting.value.audioEngine != osSetting.defaults.audioEngine)
             {
-                JsonSetNestedValue(root, osSetting.json_path, osSetting.setting.s32Setting->GetValue());
+                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.audioEngine));
             }
             break;
-        case SettingType::U32Switchable:
-            if (osSetting.setting.u32Switchable->GetValue() != osSetting.setting.u32Switchable->GetDefault())
+        case SettingType::AudioMode:
+            if (*osSetting.value.audioMode != osSetting.defaults.audioMode)
             {
-                JsonSetNestedValue(root, osSetting.json_path,
-                                   static_cast<int32_t>(osSetting.setting.u32Switchable->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.audioMode));
             }
             break;
-        case SettingType::S64Switchable:
-            if (osSetting.setting.s64Switchable->GetValue() != osSetting.setting.s64Switchable->GetDefault())
+        case SettingType::Language:
+            if (*osSetting.value.language != osSetting.defaults.language)
             {
-                JsonSetNestedValue(root, osSetting.json_path,
-                                   static_cast<int32_t>(osSetting.setting.s64Switchable->GetValue()));
+                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.language));
+            }
+            break;
+        case SettingType::DockedMode:
+            if (*osSetting.value.dockedMode != osSetting.defaults.dockedMode)
+            {
+                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.dockedMode));
             }
             break;
         default:
@@ -973,153 +1010,128 @@ void SaveOsSettings(void)
 
 namespace
 {
-    OsSetting::OsSetting(const char * id,const char * path, Settings::SwitchableSetting<std::string> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::StringSetting)
-    {
-        setting.stringSetting = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::AudioEngine> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::AudioEngine)
-    {
-        setting.audioEngine = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::AudioMode, true> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::AudioMode)
-    {
-        setting.audioMode = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::Language, true> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::Language)
-    {
-        setting.languageIndex = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<Settings::DockedMode> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::DockedMode)
-    {
-        setting.dockedMode = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u8, true> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::U8)
-    {
-        setting.u8 = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u16, true> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::U16)
-    {
-        setting.u16 = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<bool> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::BooleanSwitchable)
-    {
-        setting.booleanSwitchable = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::Setting<bool, false> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::BooleanSetting)
-    {
-        setting.booleanSetting = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, bool * val, bool defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::BooleanValue)
-    {
-        setting.boolValue = val;
-        defaultValue.boolValue = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, int * val, int defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::UnsignedInt)
-    {
-        setting.uint32Value = (uint32_t *)val;
-        defaultValue.uint32Value = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, float * val, float defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::Float)
-    {
-        setting.floatValue = val;
-        defaultValue.floatValue = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, uint32_t * val, uint32_t defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::UnsignedInt)
-    {
-        setting.uint32Value = val;
-        defaultValue.uint32Value = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, std::string * val, const char * defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::StringValue)
-    {
-        setting.stringValue = val;
-        defaultValue.sringValue = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, ControllerType * val, ControllerType defaultValue_) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::ControllerType)
-    {
-        setting.controllerType = val;
-        defaultValue.controllerType = defaultValue_;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::Setting<s32> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::S32Setting)
-    {
-        setting.s32Setting = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<u32> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::U32Switchable)
-    {
-        setting.u32Switchable = val;
-    }
-
-    OsSetting::OsSetting(const char * id, const char * path, Settings::SwitchableSetting<s64, true> * val) :
-        identifier(id),
-        json_path(path),
-        settingType(SettingType::S64Switchable)
-    {
-        setting.s64Switchable = val;
-    }
+OsSetting::OsSetting(const char * id, const char * path, bool * val, bool defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::Boolean)
+{
+    defaults.boolValue = defaultValue;
+    value.boolValue = val;
 }
+
+OsSetting::OsSetting(const char * id, const char * path, float * val, float defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::Float)
+{
+    defaults.floatValue = defaultValue;
+    value.floatValue = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, std::string * val, const char * defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::String)
+{
+    defaults.stringValue = defaultValue;
+    value.stringValue = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, ControllerType * val, ControllerType defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::ControllerType)
+{
+    defaults.controllerType = defaultValue;
+    value.controllerType = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, Settings::AudioEngine * val, Settings::AudioEngine defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::AudioEngine)
+{
+    defaults.audioEngine = defaultValue;
+    value.audioEngine = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, Settings::AudioMode * val, Settings::AudioMode defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::AudioMode)
+{
+    defaults.audioMode = defaultValue;
+    value.audioMode = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, Settings::Language * val, Settings::Language defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::Language)
+{
+    defaults.language = defaultValue;
+    value.language = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, Settings::DockedMode * val, Settings::DockedMode defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::DockedMode)
+{
+    defaults.dockedMode = defaultValue;
+    value.dockedMode = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, u8 * val, int32_t defaultValue, int32_t minValue, int32_t maxValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::IntValueRanged),
+    rangedWidth(RangedWidth::U8),
+    minValue(minValue),
+    maxValue(maxValue)
+{
+    defaults.intValue = defaultValue;
+    value.u8Value = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, u16 * val, int32_t defaultValue, int32_t minValue, int32_t maxValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::IntValueRanged),
+    rangedWidth(RangedWidth::U16),
+    minValue(minValue),
+    maxValue(maxValue)
+{
+    defaults.intValue = defaultValue;
+    value.u16Value = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, s32 * val, s32 defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::S32)
+{
+    defaults.s32Value = defaultValue;
+    value.s32Value = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, u32 * val, u32 defaultValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::U32)
+{
+    defaults.u32Value = defaultValue;
+    value.u32Value = val;
+}
+
+OsSetting::OsSetting(const char * id, const char * path, s64 * val, s64 defaultValue, s64 minValue, s64 maxValue) :
+    identifier(id),
+    json_path(path),
+    settingType(SettingType::S64Ranged),
+    minValueS64(minValue),
+    maxValueS64(maxValue)
+{
+    defaults.s64Value = defaultValue;
+    value.s64Value = val;
+}
+} // namespace

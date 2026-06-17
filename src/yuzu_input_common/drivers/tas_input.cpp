@@ -269,7 +269,7 @@ void Tas::UpdateThread()
     }
     else
     {
-        is_running = osSettings.tas_loop.GetValue();
+        is_running = osSettings.tas_loop;
         LoadTasFiles();
         current_command = 0;
         ClearInput();

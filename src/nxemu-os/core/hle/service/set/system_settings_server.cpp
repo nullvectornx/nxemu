@@ -303,7 +303,7 @@ ISystemSettingsServer::ISystemSettingsServer(Core::System & system_) :
 
     SetupSettings();
 
-    m_system_settings.region_code = static_cast<SystemRegionCode>(osSettings.region_index.GetValue());
+    m_system_settings.region_code = static_cast<SystemRegionCode>(osSettings.region_index);
 
     // TODO: Remove this when starter applet is fully functional
     EulaVersion eula_version{
@@ -1039,8 +1039,8 @@ Result ISystemSettingsServer::GetDeviceNickName(OutLargeData<std::array<u8, 0x80
     LOG_DEBUG(Service_SET, "called");
 
     *out_device_name = {};
-    const auto device_name_buffer = osSettings.device_name.GetValue().c_str();
-    memcpy(out_device_name->data(), device_name_buffer, osSettings.device_name.GetValue().size());
+    const auto device_name_buffer = osSettings.device_name.c_str();
+    memcpy(out_device_name->data(), device_name_buffer, osSettings.device_name.size());
 
     R_SUCCEED();
 }

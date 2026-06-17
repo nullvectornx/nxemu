@@ -173,7 +173,7 @@ void UDPClient::ReloadSockets()
 {
     Reset();
 
-    std::stringstream servers_ss(osSettings.udp_input_servers.GetValue());
+    std::stringstream servers_ss(osSettings.udp_input_servers);
     std::string server_token;
     std::size_t client = 0;
     while (std::getline(servers_ss, server_token, ','))
@@ -311,7 +311,7 @@ void UDPClient::OnPadData(Response::PadData data, std::size_t client)
             static_cast<int>(id == 0 ? PadButton::Touch1 : PadButton::Touch2);
 
         // TODO: Use custom calibration per device
-        const Common::ParamPackage touch_param(osSettings.touch_device.GetValue());
+        const Common::ParamPackage touch_param(osSettings.touch_device);
         const u16 min_x = static_cast<u16>(touch_param.Get("min_x", 100));
         const u16 min_y = static_cast<u16>(touch_param.Get("min_y", 50));
         const u16 max_x = static_cast<u16>(touch_param.Get("max_x", 1800));

@@ -96,7 +96,7 @@ u32 Manager::GetDeviceNames(std::span<Renderer::AudioDevice::AudioDeviceName> na
 
     LinkToManager();
 
-    auto input_devices{Sink::GetDeviceListForSink(osSettings.sink_id.GetValue(), true)};
+    auto input_devices{Sink::GetDeviceListForSink(osSettings.sink_id, true)};
     if (!input_devices.empty() && !names.empty())
     {
         names[0] = Renderer::AudioDevice::AudioDeviceName("Uac");

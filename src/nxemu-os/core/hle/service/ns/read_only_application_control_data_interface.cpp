@@ -43,7 +43,7 @@ Result IReadOnlyApplicationControlDataInterface::GetApplicationDesiredLanguage(
     LOG_INFO(Service_NS, "called with supported_languages={:08X}", supported_languages);
 
     // Get language code from settings
-    const auto language_code = Set::GetLanguageCodeFromIndex(static_cast<s32>(osSettings.language_index.GetValue()));
+    const auto language_code = Set::GetLanguageCodeFromIndex(static_cast<s32>(osSettings.language_index));
 
     // Convert to application language, get priority list
     const auto application_language = ConvertToApplicationLanguage(language_code);

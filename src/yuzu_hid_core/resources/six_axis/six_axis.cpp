@@ -92,7 +92,7 @@ void SixAxis::OnUpdate(const Core::Timing::CoreTiming & core_timing)
             sixaxis_left_lifo_state = {};
             sixaxis_right_lifo_state = {};
 
-            if (controller.sixaxis_sensor_enabled && osSettings.motion_enabled.GetValue())
+            if (controller.sixaxis_sensor_enabled && osSettings.motion_enabled)
             {
                 controller.sixaxis_at_rest = true;
                 for (std::size_t e = 0; e < sizeof(motion_state.motion) / sizeof(motion_state.motion[0]); ++e)
@@ -120,7 +120,7 @@ void SixAxis::OnUpdate(const Core::Timing::CoreTiming & core_timing)
                     state = default_motion_state;
                     return;
                 }
-                if (!osSettings.motion_enabled.GetValue())
+                if (!osSettings.motion_enabled)
                 {
                     state = default_motion_state;
                     return;

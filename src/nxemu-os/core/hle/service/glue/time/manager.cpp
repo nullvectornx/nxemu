@@ -16,6 +16,7 @@
 #include "core/hle/service/set/system_settings_server.h"
 #include "core/hle/service/sm/sm.h"
 #include "nxemu-os/os_settings.h"
+#include "yuzu_common/settings.h"
 #include "yuzu_common/time_zone.h"
 
 namespace Service::Glue::Time
@@ -70,7 +71,7 @@ s64 GetEpochTimeFromInitialYear(std::shared_ptr<Service::Set::ISystemSettingsSer
 
 Service::PSC::Time::LocationName GetTimeZoneString(Core::System & system, Service::PSC::Time::LocationName & in_name)
 {
-    auto configured_zone = Settings::GetTimeZoneString(osSettings.time_zone_index.GetValue());
+    auto configured_zone = Settings::GetTimeZoneString(osSettings.time_zone_index);
 
     Service::PSC::Time::LocationName configured_name{};
     std::memcpy(configured_name.data(), configured_zone.data(), std::min(configured_name.size(), configured_zone.size()));
