@@ -1887,6 +1887,9 @@
     <ClInclude Include="core\hle\service\audio\hardware_opus_decoder.h">
       <Filter>Header Files\core\hle\service\audio</Filter>
     </ClInclude>
+    <ClInclude Include="os_enum_strings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="os_settings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -3273,6 +3276,9 @@
     </ClCompile>
     <ClCompile Include="core\hle\service\audio\hardware_opus_decoder.cpp">
       <Filter>Source Files\core\hle\service\audio</Filter>
+    </ClCompile>
+    <ClCompile Include="os_enum_strings.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="os_settings.cpp">
       <Filter>Source Files</Filter>

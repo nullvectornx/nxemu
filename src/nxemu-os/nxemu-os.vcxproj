@@ -470,6 +470,7 @@
     <ClCompile Include="core\hle\service\vi\system_root_service.cpp" />
     <ClCompile Include="core\hle\service\vi\vi.cpp" />
     <ClCompile Include="core\hle\service\vi\vsync_manager.cpp" />
+    <ClCompile Include="os_enum_strings.cpp" />
     <ClCompile Include="os_manager.cpp" />
     <ClCompile Include="os_settings.cpp" />
   </ItemGroup>
@@ -966,6 +967,7 @@
     <ClInclude Include="emu_thread.h" />
     <ClInclude Include="nxemu-os.h" />
     <ClInclude Include="os_manager.h" />
+    <ClInclude Include="os_enum_strings.h" />
     <ClInclude Include="os_settings.h" />
     <ClInclude Include="player_input.h" />
     <ClInclude Include="os_settings_identifiers.h" />

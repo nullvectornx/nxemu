@@ -1,12 +1,11 @@
 #include "os_settings.h"
+#include "os_enum_strings.h"
 #include "os_settings_identifiers.h"
 #include <algorithm>
 #include <climits>
 #include <common/json_util.h>
 #include <cstring>
 #include <nxemu-module-spec/base.h>
-#include <vector>
-#include <yuzu_common/settings_enums.h>
 #include <yuzu_common/yuzu_assert.h>
 
 extern IModuleSettings * g_settings;
@@ -491,62 +490,6 @@ static OsSetting settings[] = {
 #endif
     };
 
-    template <typename T>
-    std::vector<std::pair<std::string, T>> Canonicalizations();
-
-    // Specialization for ControllerType
-    template <>
-    std::vector<std::pair<std::string, ControllerType>> Canonicalizations<ControllerType>()
-    {
-        return {
-            {"ProController", ControllerType::ProController},
-            {"DualJoyconDetached", ControllerType::DualJoyconDetached},
-            {"LeftJoycon", ControllerType::LeftJoycon},
-            {"RightJoycon", ControllerType::RightJoycon},
-            {"Handheld", ControllerType::Handheld},
-            {"GameCube", ControllerType::GameCube},
-            {"Pokeball", ControllerType::Pokeball},
-            {"NES", ControllerType::NES},
-            {"SNES", ControllerType::SNES},
-            {"N64", ControllerType::N64},
-            {"SegaGenesis", ControllerType::SegaGenesis},
-        };
-    };
-
-    template <typename T>
-    std::string CanonicalizeEnum(T value)
-    {
-        using CanonicalItem = std::pair<std::string, T>;
-        using CanonicalList = std::vector<CanonicalItem>;
-        const CanonicalList group = Canonicalizations<T>();
-
-        for (const CanonicalItem & item : group)
-        {
-            if (item.second == value)
-            {
-                return item.first;
-            }
-        }
-        return "";
-    }
-
-    template <typename T>
-    T ParseEnum(const std::string& canonicalization)
-    {
-        using CanonicalItem = std::pair<std::string, T>;
-        using CanonicalList = std::vector<CanonicalItem>;
-        const CanonicalList group = Canonicalizations<T>();
-
-        for (const CanonicalItem& item : group)
-        {
-            if (item.first == canonicalization)
-            {
-                return item.second;
-            }
-        }
-        return {};
-    }
-
 void ApplyRangedInt(OsSetting & osSetting, int32_t value)
 {
     const int32_t clamped = std::clamp(value, osSetting.minValue, osSetting.maxValue);
@@ -805,31 +748,31 @@ void SetupOsSetting(void)
             case SettingType::ControllerType:
                 if (value.isString())
                 {
-                    *osSetting.value.controllerType = ParseEnum<ControllerType>(value.asString());
+                    *osSetting.value.controllerType = ControllerTypeFromString(value.asString());
                 }
                 break;
             case SettingType::AudioEngine:
                 if (value.isString())
                 {
-                    *osSetting.value.audioEngine = Settings::ToEnum<Settings::AudioEngine>(value.asString());
+                    *osSetting.value.audioEngine = AudioEngineFromString(value.asString());
                 }
                 break;
             case SettingType::AudioMode:
                 if (value.isString())
                 {
-                    *osSetting.value.audioMode = Settings::ToEnum<Settings::AudioMode>(value.asString());
+                    *osSetting.value.audioMode = AudioModeFromString(value.asString());
                 }
                 break;
             case SettingType::Language:
                 if (value.isString())
                 {
-                    *osSetting.value.language = Settings::ToEnum<Settings::Language>(value.asString());
+                    *osSetting.value.language = LanguageFromString(value.asString());
                 }
                 break;
             case SettingType::DockedMode:
                 if (value.isString())
                 {
-                    *osSetting.value.dockedMode = Settings::ToEnum<Settings::DockedMode>(value.asString());
+                    *osSetting.value.dockedMode = DockedModeFromString(value.asString());
                 }
                 break;
             default:
@@ -974,31 +917,31 @@ void SaveOsSettings(void)
         case SettingType::ControllerType:
             if (*osSetting.value.controllerType != osSetting.defaults.controllerType)
             {
-                JsonSetNestedValue(root, osSetting.json_path, CanonicalizeEnum(*osSetting.value.controllerType));
+                JsonSetNestedValue(root, osSetting.json_path, ControllerTypeToString(*osSetting.value.controllerType));
             }
             break;
         case SettingType::AudioEngine:
             if (*osSetting.value.audioEngine != osSetting.defaults.audioEngine)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.audioEngine));
+                JsonSetNestedValue(root, osSetting.json_path, AudioEngineToString(*osSetting.value.audioEngine));
             }
             break;
         case SettingType::AudioMode:
             if (*osSetting.value.audioMode != osSetting.defaults.audioMode)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.audioMode));
+                JsonSetNestedValue(root, osSetting.json_path, AudioModeToString(*osSetting.value.audioMode));
             }
             break;
         case SettingType::Language:
             if (*osSetting.value.language != osSetting.defaults.language)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.language));
+                JsonSetNestedValue(root, osSetting.json_path, LanguageToString(*osSetting.value.language));
             }
             break;
         case SettingType::DockedMode:
             if (*osSetting.value.dockedMode != osSetting.defaults.dockedMode)
             {
-                JsonSetNestedValue(root, osSetting.json_path, Settings::CanonicalizeEnum(*osSetting.value.dockedMode));
+                JsonSetNestedValue(root, osSetting.json_path, DockedModeToString(*osSetting.value.dockedMode));
             }
             break;
         default:
