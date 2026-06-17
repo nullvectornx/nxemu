@@ -231,7 +231,7 @@ struct GPU::Impl :
     {
         u64 gpu_tick = m_modules.OperatingSystem().GetGPUTicks();
 
-        if (videoSettings.use_fast_gpu_time.GetValue())
+        if (videoSettings.use_fast_gpu_time)
         {
             gpu_tick /= 256;
         }

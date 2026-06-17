@@ -67,9 +67,9 @@ void WindowAdaptPass::Draw(RasterizerVulkan& rasterizer, Scheduler& scheduler, s
     }
 
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
-        const f32 bg_red = videoSettings.bg_red.GetValue() / 255.0f;
-        const f32 bg_green = videoSettings.bg_green.GetValue() / 255.0f;
-        const f32 bg_blue = videoSettings.bg_blue.GetValue() / 255.0f;
+        const f32 bg_red = videoSettings.bg_red / 255.0f;
+        const f32 bg_green = videoSettings.bg_green / 255.0f;
+        const f32 bg_blue = videoSettings.bg_blue / 255.0f;
         const VkClearAttachment clear_attachment{
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .colorAttachment = 0,

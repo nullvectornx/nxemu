@@ -205,7 +205,7 @@ void TextureCache<P>::FillComputeImageViews(std::span<ImageViewInOut> views) {
 
 template <class P>
 void TextureCache<P>::CheckFeedbackLoop(std::span<const ImageViewInOut> views) {
-    if (!videoSettings.barrier_feedback_loops.GetValue()) {
+    if (!videoSettings.barrier_feedback_loops) {
         return;
     }
 

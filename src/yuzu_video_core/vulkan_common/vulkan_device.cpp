@@ -663,7 +663,7 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
     }
     has_broken_compute =
         CheckBrokenCompute(properties.driver.driverID, properties.properties.driverVersion) &&
-        !videoSettings.enable_compute_pipelines.GetValue();
+        !videoSettings.enable_compute_pipelines;
     if (is_intel_anv || (is_qualcomm && !is_s8gen2)) {
         LOG_WARNING(Render_Vulkan, "Driver does not support native BGR format");
         must_emulate_bgr565 = true;
@@ -1226,7 +1226,7 @@ void Device::RemoveUnsuitableExtensions() {
                                        VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
 
     // VK_KHR_pipeline_executable_properties
-    if (videoSettings.renderer_shader_feedback.GetValue()) {
+    if (videoSettings.renderer_shader_feedback) {
         extensions.pipeline_executable_properties =
             features.pipeline_executable_properties.pipelineExecutableInfo;
         RemoveExtensionFeatureIfUnsuitable(extensions.pipeline_executable_properties,
@@ -1329,7 +1329,7 @@ void Device::CollectPhysicalMemoryInfo() {
         const u64 reserve_memory = std::min<u64>(device_access_memory / 8, 1_GiB);
         device_access_memory -= reserve_memory;
 
-        if (videoSettings.vram_usage_mode.GetValue() != VramUsageMode::Aggressive) {
+        if (videoSettings.vram_usage_mode != VramUsageMode::Aggressive) {
             // Account for resolution scaling in memory limits
             const size_t normal_memory = 6_GiB;
             const size_t scaler_memory = 1_GiB * videoSettings.resolution_info.ScaleUp(1);

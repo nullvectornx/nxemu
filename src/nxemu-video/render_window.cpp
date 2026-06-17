@@ -254,7 +254,7 @@ void RenderWindow::OnFrameDisplayed()
 std::unique_ptr<Core::Frontend::GraphicsContext> RenderWindow::CreateSharedContext() const
 {
 #if defined(_WIN32)
-    if (videoSettings.renderer_backend.GetValue() == RendererBackend::OpenGL)
+    if (videoSettings.renderer_backend == RendererBackend::OpenGL)
     {
         return std::make_unique<OpenGLSharedContext>(m_renderWindow);
     }

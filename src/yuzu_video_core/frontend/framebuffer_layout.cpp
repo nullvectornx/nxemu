@@ -37,7 +37,7 @@ FramebufferLayout DefaultFrameLayout(u32 width, u32 height)
     };
 
     const float window_aspect_ratio = static_cast<float>(height) / static_cast<float>(width);
-    const float emulation_aspect_ratio = EmulationAspectRatio(static_cast<AspectRatio>(videoSettings.aspect_ratio.GetValue()), window_aspect_ratio);
+    const float emulation_aspect_ratio = EmulationAspectRatio(static_cast<AspectRatio>(videoSettings.aspect_ratio), window_aspect_ratio);
 
     const Common::Rectangle<u32> screen_window_area{0, 0, width, height};
     Common::Rectangle<u32> screen = MaxRectangle(screen_window_area, emulation_aspect_ratio);

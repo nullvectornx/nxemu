@@ -86,7 +86,7 @@ struct VideoManager::Impl
             };
 
             notify_disk_cache_progress(VideoCore::LoadCallbackStage::Prepare, 0, 0);
-            if (videoSettings.use_disk_shader_cache.GetValue())
+            if (videoSettings.use_disk_shader_cache)
             {
                 const u64 program_id = m_modules.OperatingSystem().GetProgramId();
                 const std::stop_token stop_token;
@@ -100,7 +100,7 @@ struct VideoManager::Impl
                 m_gpuCore->ObtainContext();
             }
             notify_disk_cache_progress(VideoCore::LoadCallbackStage::Complete, 0, 0);
-            if (!videoSettings.use_disk_shader_cache.GetValue())
+            if (!videoSettings.use_disk_shader_cache)
             {
                 m_gpuCore->ReleaseContext();
             }

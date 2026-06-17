@@ -233,8 +233,8 @@ void ApplySwizzle(GLuint handle, PixelFormat format, std::array<SwizzleSource, 4
 [[nodiscard]] bool CanBeAccelerated(const TextureCacheRuntime& runtime,
                                     const VideoCommon::ImageInfo& info) {
     if (IsPixelFormatASTC(info.format) && info.size.depth == 1 && !runtime.HasNativeASTC()) {
-        return videoSettings.accelerate_astc.GetValue() == AstcDecodeMode::Gpu &&
-               videoSettings.astc_recompression.GetValue() ==
+        return videoSettings.accelerate_astc == AstcDecodeMode::Gpu &&
+               videoSettings.astc_recompression ==
                    AstcRecompression::Uncompressed;
     }
     // Disable other accelerated uploads for now as they don't implement swizzled uploads
@@ -267,7 +267,7 @@ void ApplySwizzle(GLuint handle, PixelFormat format, std::array<SwizzleSource, 4
 [[nodiscard]] bool CanBeDecodedAsync(const TextureCacheRuntime& runtime,
                                      const VideoCommon::ImageInfo& info) {
     if (IsPixelFormatASTC(info.format) && !runtime.HasNativeASTC()) {
-        return videoSettings.accelerate_astc.GetValue() == AstcDecodeMode::CpuAsynchronous;
+        return videoSettings.accelerate_astc == AstcDecodeMode::CpuAsynchronous;
     }
     return false;
 }
@@ -440,12 +440,12 @@ OGLTexture MakeImage(const VideoCommon::ImageInfo& info, GLenum gl_internal_form
 }
 
 [[nodiscard]] bool IsAstcRecompressionEnabled() {
-    return videoSettings.astc_recompression.GetValue() !=
+    return videoSettings.astc_recompression !=
            AstcRecompression::Uncompressed;
 }
 
 [[nodiscard]] GLenum SelectAstcFormat(PixelFormat format, bool is_srgb) {
-    switch (videoSettings.astc_recompression.GetValue()) {
+    switch (videoSettings.astc_recompression) {
     case AstcRecompression::Bc1:
         return is_srgb ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT : GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
         break;

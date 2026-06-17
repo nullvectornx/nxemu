@@ -7,11 +7,11 @@
 #include "video_settings.h"
 
 static inline ScalingFilter GetScalingFilter() {
-    return videoSettings.scaling_filter.GetValue();
+    return videoSettings.scaling_filter;
 }
 
 static inline AntiAliasing GetAntiAliasing() {
-    return videoSettings.anti_aliasing.GetValue();
+    return videoSettings.anti_aliasing;
 }
 
 static inline ScalingFilter GetScalingFilterForAppletCapture() {

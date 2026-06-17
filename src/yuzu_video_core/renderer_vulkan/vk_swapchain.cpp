@@ -41,7 +41,7 @@ static VkPresentModeKHR ChooseSwapPresentMode(bool has_imm, bool has_mailbox,
     // FIFO present mode locks the framerate to the monitor's refresh rate
     VSyncMode setting = [has_imm, has_mailbox]() {
         // Choose Mailbox or Immediate if unlocked and those modes are supported
-        const auto mode = videoSettings.vsync_mode.GetValue();
+        const auto mode = videoSettings.vsync_mode;
         if (Settings::values.use_speed_limit.GetValue()) {
             return mode;
         }

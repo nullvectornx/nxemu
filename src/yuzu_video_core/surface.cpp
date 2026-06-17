@@ -408,7 +408,7 @@ u64 TranscodedAstcSize(u64 base_size, PixelFormat format) {
                                 static_cast<u64>(DefaultBlockHeight(format)) * RGBA8_PIXEL_SIZE;
     const u64 uncompressed_size = (base_size * base_block_size) / BytesPerBlock(format);
 
-    switch (videoSettings.astc_recompression.GetValue()) {
+    switch (videoSettings.astc_recompression) {
     case AstcRecompression::Bc1:
         return uncompressed_size / 8;
     case AstcRecompression::Bc3:

@@ -103,7 +103,7 @@ PresentManager::PresentManager(const vk::Instance& instance_,
       memory_allocator{memory_allocator_}, scheduler{scheduler_}, swapchain{swapchain_},
       surface{surface_}, blit_supported{CanBlitToSwapchain(device.GetPhysical(),
                                                            swapchain.GetImageViewFormat())},
-      use_present_thread{videoSettings.async_presentation.GetValue()} {
+      use_present_thread{videoSettings.async_presentation} {
     SetImageCount();
 
     auto& dld = device.GetLogical();

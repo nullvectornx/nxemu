@@ -417,7 +417,7 @@ bool DecodeApi::Initialize(Tegra::Host1x::NvdecCommon::VideoCodec codec)
     m_decoder_context.emplace(*m_decoder);
 
     // Enable GPU decoding if requested.
-    if (videoSettings.nvdec_emulation.GetValue() == NvdecEmulation::Gpu)
+    if (videoSettings.nvdec_emulation == NvdecEmulation::Gpu)
     {
         m_hardware_context.emplace();
         m_hardware_context->InitializeForDecoder(*m_decoder_context, *m_decoder);

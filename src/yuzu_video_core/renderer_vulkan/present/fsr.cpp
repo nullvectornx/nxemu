@@ -190,7 +190,7 @@ VkImageView FSR::Draw(Scheduler& scheduler, size_t image_index, VkImage source_i
                      viewport_y);
 
     const float sharpening =
-        static_cast<float>(videoSettings.fsr_sharpening_slider.GetValue()) / 100.0f;
+        static_cast<float>(videoSettings.fsr_sharpening_slider) / 100.0f;
     FsrRcasCon(rcas_con.data(), sharpening);
 
     UploadImages(scheduler);

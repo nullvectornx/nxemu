@@ -244,7 +244,7 @@ FormatInfo SurfaceFormat(const Device& device, FormatType format_type, bool with
     if (!device.IsOptimalAstcSupported() && VideoCore::Surface::IsPixelFormatASTC(pixel_format)) {
         const bool is_srgb = with_srgb && VideoCore::Surface::IsPixelFormatSRGB(pixel_format);
 
-        switch (videoSettings.astc_recompression.GetValue()) {
+        switch (videoSettings.astc_recompression) {
         case AstcRecompression::Uncompressed:
             if (is_srgb) {
                 tuple.format = VK_FORMAT_A8B8G8R8_SRGB_PACK32;

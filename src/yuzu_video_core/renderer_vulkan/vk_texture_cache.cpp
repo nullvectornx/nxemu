@@ -845,7 +845,7 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
     : device{device_}, scheduler{scheduler_}, memory_allocator{memory_allocator_},
       staging_buffer_pool{staging_buffer_pool_}, blit_image_helper{blit_image_helper_},
       render_pass_cache{render_pass_cache_}, resolution{videoSettings.resolution_info} {
-    if (videoSettings.accelerate_astc.GetValue() == AstcDecodeMode::Gpu) {
+    if (videoSettings.accelerate_astc == AstcDecodeMode::Gpu) {
         astc_decoder_pass.emplace(device, scheduler, descriptor_pool, staging_buffer_pool,
                                   compute_pass_descriptor_queue, memory_allocator);
     }
@@ -1373,9 +1373,9 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
                                                    runtime->ViewFormats(info.format))),
       aspect_mask(ImageAspectMask(info.format)) {
     if (IsPixelFormatASTC(info.format) && !runtime->device.IsOptimalAstcSupported()) {
-        switch (videoSettings.accelerate_astc.GetValue()) {
+        switch (videoSettings.accelerate_astc) {
         case AstcDecodeMode::Gpu:
-            if (videoSettings.astc_recompression.GetValue() ==
+            if (videoSettings.astc_recompression ==
                     AstcRecompression::Uncompressed &&
                 info.size.depth == 1) {
                 flags |= VideoCommon::ImageFlagBits::AcceleratedUpload;
@@ -1400,7 +1400,7 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
     current_image = *original_image;
     storage_image_views.resize(info.resources.levels);
     if (IsPixelFormatASTC(info.format) && !runtime->device.IsOptimalAstcSupported() &&
-        videoSettings.astc_recompression.GetValue() == AstcRecompression::Uncompressed) {
+        videoSettings.astc_recompression == AstcRecompression::Uncompressed) {
         const auto& device = runtime->device.GetLogical();
         for (s32 level = 0; level < info.resources.levels; ++level) {
             storage_image_views[level] =

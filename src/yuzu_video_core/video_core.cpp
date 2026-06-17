@@ -20,7 +20,7 @@ std::unique_ptr<VideoCore::RendererBase> CreateRenderer(Tegra::Host1x::Host1x & 
 {
     auto & device_memory = host1x.MemoryManager();
 
-    switch (videoSettings.renderer_backend.GetValue())
+    switch (videoSettings.renderer_backend)
     {
     case RendererBackend::OpenGL: return std::make_unique<OpenGL::RendererOpenGL>(emu_window, device_memory, gpu, std::move(context));
     case RendererBackend::Vulkan: return std::make_unique<Vulkan::RendererVulkan>(emu_window, device_memory, gpu, std::move(context));
@@ -37,9 +37,9 @@ std::unique_ptr<Tegra::GPU> CreateGPU(ISystemModules & modules, Core::Frontend::
 {
     Settings::UpdateRescalingInfo();
 
-    const auto nvdec_value = videoSettings.nvdec_emulation.GetValue();
+    const auto nvdec_value = videoSettings.nvdec_emulation;
     const bool use_nvdec = nvdec_value != NvdecEmulation::Off;
-    const bool use_async = videoSettings.use_asynchronous_gpu_emulation.GetValue();
+    const bool use_async = videoSettings.use_asynchronous_gpu_emulation;
     auto gpu = std::make_unique<Tegra::GPU>(modules, host1x, use_async, use_nvdec);
     auto context = emu_window.CreateSharedContext();
     auto scope = context->Acquire();
