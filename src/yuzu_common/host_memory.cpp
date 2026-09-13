@@ -693,6 +693,8 @@ void HostMemory::Map(size_t virtual_offset, size_t host_offset, size_t length,
     ASSERT(length % PageAlignment == 0);
     ASSERT(virtual_offset + length <= virtual_size);
     ASSERT(host_offset + length <= backing_size);
+    ASSERT_MSG(!(True(perms & MemoryPermission::Write) && True(perms & MemoryPermission::Execute)),
+               "W^X: cannot map with both Write and Execute");
     if (length == 0 || !virtual_base || !impl) {
         return;
     }
@@ -719,6 +721,7 @@ void HostMemory::Protect(size_t virtual_offset, size_t length, MemoryPermission 
     const bool read = True(perm & MemoryPermission::Read);
     const bool write = True(perm & MemoryPermission::Write);
     const bool execute = True(perm & MemoryPermission::Execute);
+    ASSERT_MSG(!(write && execute), "W^X: cannot protect with both Write and Execute");
     impl->Protect(virtual_offset + virtual_base_offset, length, read, write, execute);
 }
 
